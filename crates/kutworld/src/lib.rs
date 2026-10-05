@@ -1,3 +1,8 @@
-//! Runtime crate for generated Kutworld applications.
+//! Runtime support for generated Kutworld applications.
 //!
-//! Runtime primitives and generated-world support will be added in later steps.
+//! [`Entity`] is an opaque identity value. It does not provide access to an
+//! entity's data; worlds will allocate identities in a later step.
+
+mod entity;
+
+pub use entity::Entity;
