@@ -240,6 +240,20 @@ An archetype that is never referenced by a query may produce a compiler warning.
 
 Maintaining such an archetype introduces structural-mutation cost without accelerating any query.
 
+## Initial Entities
+
+Initial world population is declared in configuration:
+
+```toml
+[entities.player]
+player = true
+health = 20
+```
+
+World construction creates each declared entity empty, then adds its components one at a time
+through the same generated component-add paths used during rule execution. There is no general
+public `world.spawn()` or `world.add()` bootstrap API.
+
 ## Structural Mutation
 
 Component presence changes one component at a time.
@@ -297,11 +311,11 @@ Each addition immediately updates relevant archetype indexes.
 
 There is no separate batch-initialization semantic.
 
-A rule may initialize only an entity it has just spawned.
+A rule may initialize an entity spawned by that same rule invocation.
 
 ## Despawn
 
-A rule may destroy only its current queried entity.
+A rule may destroy its current queried entity or an entity spawned by that same rule invocation.
 
 Destruction removes that entity from:
 
@@ -309,7 +323,7 @@ Destruction removes that entity from:
 - archetype indexes
 - world entity state
 
-A rule cannot destroy another existing entity.
+A rule cannot mutate or destroy any other pre-existing entity.
 
 ## Indexed Mutation
 
@@ -441,6 +455,11 @@ A rule with no query, or an empty query matching every entity implicitly, is not
 
 World-wide behavior should be expressed explicitly through world state and queryable
 components/archetypes.
+
+Every query must have a positive driving selector: a positive component requirement, a positive
+archetype requirement, or an explicit entity restriction. Negative-only queries such as `not Dead`
+are invalid. An entity-restricted query such as `entity == cached_id, not Dead` is driven by direct
+identity lookup; it does not require a scan of all live entities.
 
 ## Rule Views
 
@@ -610,14 +629,18 @@ If processing `e1` changes its component structure, the current snapshot does no
 
 Newly matching entities are not inserted into the already-running query.
 
+A snapshot freezes entity selection only. It does not end or protect component borrows. Generated
+Rust APIs must ensure that any live component `&` or `&mut` borrow that an operation could
+invalidate has ended before `add`, `remove`, or `despawn` occurs.
+
 ## Rule Mutation Scope
 
 A rule may directly mutate only:
 
 - its current queried entity
-- an entity it has just spawned
+- any entity spawned by that same rule invocation
 
-It may not directly mutate any other existing entity.
+It may not directly mutate or destroy any other pre-existing entity.
 
 This applies to:
 
@@ -660,7 +683,12 @@ add C
 remove C
 ```
 
-Structural access to `C` conflicts with concurrent rules that:
+Structural access conflicts with concurrent rules based on all generated storage effects, including
+component storages and shared generated state such as archetype indexes and entity allocation,
+unless that state is explicitly synchronized. For example, if `Moving = { Position, Velocity }`,
+adding either `Position` or `Velocity` may update the `Moving` index, so those additions conflict.
+
+For component `C`, structural access includes conflicts with concurrent rules that:
 
 ```text
 read C
@@ -712,6 +740,10 @@ physics must complete before collisions starts
 ```
 
 Dependencies express ordering only.
+
+During `tick()`, external rules are skipped and do not block internal rules that depend on them.
+This exception applies only to external rules skipped by `tick()`. External interface calls follow
+the ordinary dependency and scheduling rules; they do not use this `tick()` exception.
 
 They do not imply:
 
@@ -791,19 +823,9 @@ access can be invalidated by that mutation.
 
 If such rules have no dependency defining their order, compilation fails.
 
-The user may resolve the conflict with:
-
-```rust
-#[depends(...)]
-```
-
-or, where complete isolation is intended:
-
-```rust
-#[serial]
-```
-
-Dependencies are preferred when they express the actual semantic order.
+Conflicting rules require an explicit dependency with `#[depends(...)]` whenever their effects
+have observable ordering. `#[serial]` only gives a rule an exclusive execution stage; it does not
+resolve conflicts or establish semantic order. The compiler must not invent ordering.
 
 ## Stages
 
@@ -870,6 +892,10 @@ Execution is advanced externally.
 Internal rules execute automatically when advancement reaches them.
 
 External interface rules are caller-controlled synchronization points within the same schedule.
+Each external interface is a hard schedule boundary. A parallel stage cannot span an interface,
+and each interface executes alone in its own stage, without parallel execution alongside internal
+rules or another interface. Internal rules are never targetable execution positions; execution may
+stop only at the requested external interface or at the cycle boundary.
 
 ## External Interface Rules
 
@@ -887,11 +913,13 @@ mutation restrictions
 scheduling
 ```
 
-The only difference is who triggers their execution.
+The only difference is how external rules enter normal advancement.
 
 Internal rules execute automatically when reached.
 
-External rules execute only when explicitly invoked by the outside caller.
+External rules are processed according to the schedule and dependency graph during normal advancement;
+they are never implicitly skipped. An external rule required by a dependency executes normally.
+`tick()` is the only operation that skips external rules.
 
 ## External Advancement
 
@@ -927,17 +955,22 @@ InterfaceY
 
 and stops after `InterfaceY`.
 
-External interfaces encountered while advancing toward another interface are skipped unless they are
-the requested target.
+External interfaces are hard boundaries between generated stages and each executes alone. During
+normal advancement, external interfaces are not implicitly skipped; advancement follows the schedule
+and dependency graph, including any external rules required by dependencies. Execution stops after
+the requested interface or at the cycle boundary. Only `tick()` skips external interfaces and uses
+the dependency exception described above.
+
+Explicit manual skipping would require a separate API, such as `skip(...)`; no such API is currently
+defined.
 
 If the requested interface lies before the current cursor:
 
 ```text
-1. finish the current cycle
-2. skip remaining external interfaces
-3. begin the next cycle
-4. advance to the requested interface
-5. execute it
+1. finish the current cycle following the schedule and dependency graph
+2. begin the next cycle
+3. advance to the requested interface
+4. execute it
 ```
 
 ## `tick()`
@@ -947,7 +980,9 @@ If the requested interface lies before the current cursor:
 During `tick()`:
 
 - internal rules execute normally
-- external interface rules are skipped
+- all external interface rules are skipped
+
+Skipping an external rule does not block an internal rule that depends on it.
 
 If called from the beginning, `tick()` executes one complete internal cycle.
 
@@ -985,7 +1020,7 @@ set component value
 add component
 remove component
 spawn entity
-despawn current entity
+despawn current queried entity or an entity spawned by this rule invocation
 ```
 
 Operations may use simple conditions:
@@ -1123,4 +1158,5 @@ tick
 
 The central restriction is:
 
-> A rule may directly mutate only its current queried entity or an entity it has just spawned.
+> A rule may directly mutate only its current queried entity or an entity spawned by that same rule
+> invocation.

@@ -267,6 +267,19 @@ This gives archetype maintenance one consistent mutation gateway.
 
 There is no separate batch-spawn initialization path.
 
+Initial entities are declared in configuration, for example:
+
+```toml
+[entities.player]
+player = true
+health = 20
+```
+
+World construction creates each declared entity empty and adds its components individually through
+these same generated component-add paths. There is no general public `world.spawn()` or
+`world.add()` bootstrap API. Rule-driven spawning remains available through declared rule
+capabilities and uses the same empty-entity and individual-add paths.
+
 ## Generated Add Paths
 
 For every component participating in archetypes, codegen collects the affected archetypes and
@@ -361,6 +374,10 @@ entity restriction
 
 Archetype implications are expanded for validation.
 
+Every query must have a positive driving selector: a positive component requirement, a positive
+archetype requirement, or an explicit entity restriction. Negative-only queries are invalid.
+Entity-restricted queries use direct identity lookup and do not require a global live-entity scan.
+
 For example:
 
 ```text
@@ -426,6 +443,9 @@ iterate archetype membership directly
 apply remaining filters
 ```
 
+When an explicit entity restriction is the positive driver, codegen checks that identity directly
+against the required component storages and remaining predicates.
+
 No generic runtime query planner is needed.
 
 ## Query Snapshots
@@ -441,8 +461,9 @@ execute stage
 ```
 
 The runtime does not continuously maintain active iterators against mutable query membership.
-
-This makes immediate structural mutation safe without requiring deferred command buffers.
+A snapshot freezes entity selection only; it does not make live component borrows safe across
+structural changes. Generated Rust APIs must structurally prevent `add`, `remove`, or `despawn` from
+being called while the operation could invalidate a live component `&` or `&mut` borrow.
 
 ## Rule IR
 
@@ -566,10 +587,10 @@ A rule may mutate:
 
 ```text
 current queried entity
-newly spawned entity
+any entity spawned by that same rule invocation
 ```
 
-but not arbitrary existing entities.
+but not any other pre-existing entity.
 
 This greatly simplifies:
 
@@ -583,14 +604,19 @@ structural conflict analysis
 
 and is a deliberate architectural restriction.
 
+The rule may add or remove components on those same entities and may despawn either the current
+queried entity or an entity spawned by that invocation. It may not add, remove, or despawn any
+other pre-existing entity.
+
 ## Spawn and Despawn Analysis
 
 `#[spawns]` and `#[despawns]` are part of rule metadata.
 
 Spawn creates an empty entity and then uses standard component-add code paths.
 
-Despawn may invalidate component and archetype membership for the current entity and is therefore
-handled conservatively by scheduling analysis.
+Despawn may target the current queried entity or an entity spawned by that same rule invocation;
+it cannot target another pre-existing entity. Despawn can invalidate component and archetype
+membership and is handled conservatively by scheduling analysis.
 
 ## Dependency Graph
 
@@ -609,7 +635,10 @@ physics -> collisions
 
 Cycles are compile-time errors.
 
-The dependency graph provides semantic ordering.
+The dependency graph provides semantic ordering. During `tick()`, external rules are skipped and
+do not block internal rules that depend on them. This exception applies only to external rules
+skipped by `tick()`. Ordinary external-interface calls follow the dependency graph and scheduling
+rules without this `tick()` exception.
 
 ## Conflict Graph
 
@@ -625,9 +654,13 @@ spawn/despawn capabilities
 serial constraints
 ```
 
-Conflicting rules require an explicit dependency unless one is serially isolated.
-
+Conflicting rules with observable effects require an explicit dependency even when serially isolated.
 The compiler does not invent ordering between conflicting rules.
+
+Conflict analysis includes all generated storage writes, including shared archetype indexes and
+entity allocation, unless that state is explicitly synchronized. For example, when
+`Moving = { Position, Velocity }`, adding `Position` and adding `Velocity` both may update the
+`Moving` index, so those rules conflict even though they write different component storages.
 
 ## Stage Generation
 
@@ -655,6 +688,11 @@ stage 1:
 
 Rules in one stage may execute in parallel.
 
+External interfaces are exclusive schedule boundaries. Each interface executes alone in its own
+stage, with no parallel execution alongside an internal rule or another interface. Stages cannot
+span an interface. Execution positions are targetable only at an external interface or the cycle
+boundary; internal rules always execute automatically while advancing to one of those positions.
+
 ## Automatic Parallelization
 
 Parallel execution is generated automatically.
@@ -674,7 +712,8 @@ There is no explicit positive parallelization directive.
 
 ## Serial Rules
 
-`#[serial]` causes the rule to receive an exclusive stage.
+`#[serial]` causes the rule to receive an exclusive stage. It does not establish ordering between
+conflicting rules; observable conflicts still require explicit dependencies.
 
 This is generated directly into the schedule rather than checked dynamically at runtime.
 
@@ -708,7 +747,8 @@ Each world maintains a cursor into that schedule.
 
 The cursor allows execution to resume from the point where a previous interface call stopped.
 
-The execution position may only stop at an external interface boundary or at the cycle boundary.
+The execution position may only stop at the requested external interface boundary or at the cycle
+boundary.
 Internal rules are never addressable targets and are always executed automatically while advancing
 between external boundaries.
 
@@ -723,14 +763,22 @@ internal
 -> automatically execute when reached
 
 external
--> execute only when specifically requested
+-> process during normal advancement according to the schedule and dependency graph
 ```
 
 Generated external methods advance the world cursor until the requested interface is reached.
 
-Unrequested external rules are skipped during that advancement.
+During normal advancement, external interfaces are never implicitly skipped. Advancement follows the
+schedule and dependency graph, including any external rules required by dependencies. Execution stops
+only after the requested interface or at the cycle boundary. Each interface remains an exclusive
+stage boundary. Only `tick()` skips external interfaces and uses the dependency exception described
+above.
 
-The execution position may only stop at an external interface boundary or at the cycle boundary.
+Explicit manual skipping would require a separate API, such as `skip(...)`; no such API is currently
+defined.
+
+The execution position may only stop at the requested external interface boundary or at the cycle
+boundary.
 Internal rules are never addressable targets and are always executed automatically while advancing
 between external boundaries.
 
@@ -788,7 +836,9 @@ Every world may expose:
 tick()
 ```
 
-`tick()` advances to the end of the current cycle while skipping every external interface rule.
+`tick()` advances to the end of the current cycle while skipping all external interface rules.
+Those skipped external rules do not block internal dependents; this exception applies only to
+external rules skipped by `tick()`.
 
 If called from the cycle start, it executes one complete internal cycle.
 
@@ -802,6 +852,10 @@ The public world API consists primarily of:
 tick()
 external rule interfaces
 ```
+
+Initial entities are populated only from declarative configuration during construction. There is
+no general public spawn or component-add bootstrap method; rule-driven spawning is exposed only
+through the generated rule execution context.
 
 Storage internals and structural mutation helpers remain private.
 
