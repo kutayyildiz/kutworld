@@ -1,8 +1,8 @@
 //! Runtime support for generated Kutworld applications.
 //!
-//! [`Entity`] is an opaque identity value. It does not provide access to an
-//! entity's data; worlds will allocate identities in a later step.
+//! [`Entity`] is an opaque, world-local identity value. Use it only with the
+//! world that allocated it; it does not provide access to entity data.
 
 mod entity;
 
-pub use entity::Entity;
+pub use entity::{Entity, EntityAllocator};

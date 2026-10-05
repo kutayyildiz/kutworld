@@ -102,9 +102,13 @@ Component presence determines the current shape of an entity.
 
 ### Entity IDs
 
-Entity IDs are monotonically unique.
+Entity IDs are monotonically unique within each world.
 
-Destroyed IDs are never reused.
+Each world owns an independent allocator; separate worlds may allocate equal IDs. An entity ID
+must remain associated with its owning world and is only meaningful when used with that world.
+
+Destroyed IDs are never reused within their world, and allocation never wraps or reuses IDs after
+exhaustion.
 
 An entity ID is not a pointer or dereferenceable handle.
 

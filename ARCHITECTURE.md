@@ -92,7 +92,12 @@ unless later requirements genuinely demand them.
 
 ## Entity Storage
 
-Entity IDs are allocated monotonically and never reused.
+Each world owns an independent allocator that assigns monotonically increasing entity IDs.
+Separate worlds may allocate equal IDs, so an ID must remain associated with the world that
+allocated it.
+
+Destroyed IDs are never reused within their world, and allocation never wraps or reuses IDs after
+exhaustion.
 
 The allocator therefore does not require generation counters.
 
