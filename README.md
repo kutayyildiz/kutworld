@@ -1,8 +1,8 @@
 # KutWorld
 
-A tiny declarative entity/rule engine.
+A tiny declarative entity/rule engine that compiles world definitions into specialized Rust code.
 
-World state consists only of **entities with atomic components**.
+World state consists of entities with atomic components.
 
 ```toml
 [components]
@@ -17,7 +17,7 @@ health = 20
 poison = 2
 ```
 
-Rules select entities, expose values, and optionally mutate them.
+Rules query entities and transform their data.
 
 ```toml
 [[rules]]
@@ -29,53 +29,47 @@ has = ["health", "poison"]
 [rules.view]
 components = ["health", "poison"]
 
-[rules.mutview]
-entity = true
-
 [[rules.do]]
 set = "health"
 value = "$health - $poison"
 ```
 
-The model is intentionally small:
+TOML rules are intentionally simple: flat operations, simple conditions, and basic arithmetic.
 
-- `query` selects entities privately
-- `view` exposes readable values
-- `mutview` grants mutable access to the current entity
-- `do` performs mutations
-- `unless` disables a rule when a world query matches
+More complex behavior can be written in Rust:
 
-Rules without `do` can act as external interfaces.
-
-```toml
-[[rules]]
-name = "players"
-
-[rules.query]
-has = ["player", "health"]
-
-[rules.view]
-entity = true
-components = ["health"]
+```rust
+#[rule]
+#[scope(Game)]
+#[query(has(Player, Health), not(Dead))]
+fn regenerate(health: &mut Health) {
+    health.0 += 1;
+}
 ```
 
-Entity IDs may be exposed to outside callers and reused as handles.
+TOML and Rust rules use the same underlying rule model.
 
-They are **not valid component values inside the world**.
+KutWorld is intentionally data-oriented:
 
-There are no:
+- entities are opaque IDs
+- components hold data
+- queries select entities
+- rules operate on the current entity
+- archetypes provide maintained query indexes
+- dependencies define rule ordering
+- safe parallelism is derived at compile time
+- worlds are specialized through code generation
 
-- entity references
-- object graphs
-- systems
-- messages or events
-- getters/setters
-- archetypes
-- domain-specific engine operations
+There are no domain-specific engine operations.
 
-Pause states, questions, actions, death, poison, and similar concepts are all represented using
+Concepts such as health, poison, death, pause state, actions, and ownership are represented using
 ordinary components and rules.
 
 The core idea:
 
-> Entities contain data. Queries find them. Views expose them. Rules transform them.
+> Entities are identities. Components are data. Queries select. Rules transform.
+
+For exact behavior and language rules, see [`SEMANTICS.md`](SEMANTICS.md).
+
+For compiler, storage, indexing, and code-generation design, see
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
