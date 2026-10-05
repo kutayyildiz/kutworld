@@ -5,6 +5,8 @@
 
 mod entity;
 mod entity_set;
+mod sparse_set;
 
 pub use entity::{Entity, EntityAllocator};
 pub use entity_set::EntitySet;
+pub use sparse_set::SparseSet;
