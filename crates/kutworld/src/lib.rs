@@ -4,5 +4,7 @@
 //! world that allocated it; it does not provide access to entity data.
 
 mod entity;
+mod entity_set;
 
 pub use entity::{Entity, EntityAllocator};
+pub use entity_set::EntitySet;
