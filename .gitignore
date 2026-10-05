@@ -5,6 +5,7 @@
 # Nix Flake
 result
 result-*
+.pre-commit-config.yaml
 
 # Direnv
 .direnv/
