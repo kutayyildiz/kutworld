@@ -1,0 +1,14 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Nix Flake
+result
+result-*
+
+# Direnv
+.direnv/
+
+# Environment
+.env
+.env.local
