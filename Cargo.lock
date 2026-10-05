@@ -5,3 +5,7 @@ version = 4
 [[package]]
 name = "kutworld"
 version = "0.1.0"
+
+[[package]]
+name = "kutworld-codegen"
+version = "0.1.0"
