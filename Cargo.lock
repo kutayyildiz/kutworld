@@ -9,3 +9,10 @@ version = "0.1.0"
 [[package]]
 name = "kutworld-codegen"
 version = "0.1.0"
+
+[[package]]
+name = "kutworld-macros"
+version = "0.1.0"
+dependencies = [
+ "kutworld-codegen",
+]
