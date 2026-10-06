@@ -21,58 +21,53 @@ A single rule invocation always operates on exactly one world.
 
 Cross-world coordination is performed externally through world interfaces.
 
-## Scopes
+## World-Owned Declarations
 
-Components, archetypes, and rules have explicit scopes.
+Each inline module marked `#[kutworld::world]` is an isolated world. Components, archetypes, rules,
+and initial entities declared inside a world belong only to that world. Ordinary Rust items outside
+a world do not register declarations with it. The current Rust declaration implementation
+recognizes component structs and type aliases only.
 
-```rust
-#[component]
-#[scope(Game, Combat)]
-struct Health(i32);
-```
-
-A component's scope defines which worlds contain storage for that component.
+An ordinary Rust type can provide data for local components in more than one world through aliases:
 
 ```rust
-#[rule]
-#[scope(Game)]
-fn regenerate(...) {
-    ...
+pub mod components {
+    pub struct HealthData(i32);
+}
+
+#[kutworld::world]
+mod game {
+    #[component]
+    type Health = crate::components::HealthData;
+}
+
+#[kutworld::world]
+mod combat {
+    #[component]
+    type Health = crate::components::HealthData;
 }
 ```
 
-A rule's scope defines which worlds receive that rule.
-
-The same applies to archetypes.
-
-For every dependency used by a declaration:
-
-```text
-declaration.scope ⊆ dependency.scope
-```
-
-Invalid scope relationships are compile-time errors.
-
-There is no separate concept of global or local declarations.
-
-A declaration is effectively global when its scope contains every world.
+These declarations use the same Rust data type, while each world owns independent `Health` storage.
+Component type aliases should refer to nominal Rust types. KutWorld does not resolve the final alias
+target. Rust checks type validity and visibility.
 
 ## Components
 
 Components are ordinary Rust types or TOML primitive declarations.
 
 ```rust
-#[component]
-#[scope(Game)]
-struct Health(i32);
+#[kutworld::world]
+mod game {
+    #[component]
+    struct Health(i32);
 
-#[component]
-#[scope(Game)]
-struct Position(Vec2);
+    #[component]
+    struct Position(Vec2);
 
-#[component]
-#[scope(Game)]
-struct Dead;
+    #[component]
+    struct Dead;
+}
 ```
 
 Components may contain a value or act as tags.
@@ -151,17 +146,17 @@ An archetype is a named, maintained entity-membership index.
 It does not own or duplicate component values.
 
 ```rust
-#[archetype(Position, Velocity)]
-#[scope(Game)]
-struct Moving;
+#[kutworld::world]
+mod game {
+    #[archetype(Position, Velocity)]
+    struct Moving;
 
-#[archetype(Position, Velocity, Renderable)]
-#[scope(Game)]
-struct RenderableMoving;
+    #[archetype(Position, Velocity, Renderable)]
+    struct RenderableMoving;
 
-#[archetype(Position, Velocity, Physics)]
-#[scope(Game)]
-struct PhysicalMoving;
+    #[archetype(Position, Velocity, Physics)]
+    struct PhysicalMoving;
+}
 ```
 
 These mean:
@@ -400,7 +395,6 @@ TOML and Rust rules share one semantic model.
 A rule conceptually contains:
 
 ```text
-scope
 query
 view
 guard
@@ -420,11 +414,13 @@ Both lower into the same internal representation.
 A query decides which entities a rule operates on.
 
 ```rust
-#[rule]
-#[scope(Game)]
-#[query(has(Player, Health), not(Dead))]
-fn regenerate(health: &mut Health) {
-    health.0 += 1;
+#[kutworld::world]
+mod game {
+    #[rule]
+    #[query(has(Player, Health), not(Dead))]
+    fn regenerate(health: &mut Health) {
+        health.0 += 1;
+    }
 }
 ```
 
@@ -637,7 +633,7 @@ A snapshot freezes entity selection only. It does not end or protect component b
 Rust APIs must ensure that any live component `&` or `&mut` borrow that an operation could
 invalidate has ended before `add`, `remove`, or `despawn` occurs.
 
-## Rule Mutation Scope
+## Rule Mutation Boundary
 
 A rule may directly mutate only:
 
@@ -1070,7 +1066,6 @@ Rust rules provide the general-purpose implementation path.
 
 ```rust
 #[rule]
-#[scope(Game)]
 #[query(has(Player, Health), not(Dead))]
 #[adds(Regenerating)]
 #[depends(input)]
@@ -1101,7 +1096,6 @@ The runtime defines no separate rule-failure recovery mechanism.
 TOML and Rust rules lower into a shared representation containing at least:
 
 ```text
-scope
 query
 view
 guard
@@ -1149,9 +1143,6 @@ guard
 
 dependency
     semantic execution ordering
-
-scope
-    which worlds contain a declaration
 
 interface
     caller-controlled rule synchronization point

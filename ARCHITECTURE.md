@@ -1,10 +1,10 @@
 # Architecture
 
-This project is a compile-time world and rule generator.
+This project generates specialized Rust code for declared worlds.
 
-TOML declarations and Rust attributes describe worlds, components, archetypes, and rules. The
-compiler lowers those declarations into a common intermediate model and generates specialized Rust
-code for each world.
+The current Rust frontend handles inline `#[kutworld::world]` modules and their local component
+structs and type aliases. Planned TOML declarations, archetypes, and rules may extend the compiler
+model without changing world ownership.
 
 The implementation favors compile-time specialization over runtime generality.
 
@@ -37,7 +37,7 @@ The configuration describes the program's world structure.
 
 The compiler turns that structure into concrete Rust.
 
-## Compilation Pipeline
+## Planned Compilation Pipeline
 
 Conceptually:
 
@@ -46,7 +46,6 @@ TOML declarations ─┐
                    ├─> semantic IR
 Rust declarations ─┘
                          │
-                         ├─ resolve scopes
                          ├─ resolve components
                          ├─ resolve archetypes
                          ├─ normalize queries
@@ -60,7 +59,11 @@ Rust declarations ─┘
                          └─ generate worlds and APIs
 ```
 
-TOML and Rust declarations converge before code generation.
+The `#[kutworld::world]` attribute processes one inline module. It collects its local components,
+then appends a specialized `World` type and implementation directly to that module. The compiler's
+temporary list of component names drives generation; each generated runtime world has one concrete
+sparse set field per component. Rust checks types, aliases, visibility, and names. This current path
+does not use a separate declaration registry or cross-world resolution pass.
 
 ## Core Runtime
 
@@ -107,7 +110,10 @@ They do not provide direct component or entity access.
 
 ## Component Storage
 
-Each component owns independent storage within each world in its scope.
+Each component declaration belongs to one world and receives storage in that world only. A local
+type alias may reuse an ordinary Rust data type in multiple worlds, while each world still has
+independent component storage. Component type aliases should refer to nominal Rust types. KutWorld
+does not resolve the final alias target.
 
 The initial implementation uses sparse-set style storage:
 
@@ -157,39 +163,52 @@ Another world may contain a completely different set of fields and generated fun
 
 There is no universal runtime `World` layout.
 
-## Scopes
+## World-Owned Declarations
 
-Scopes determine which generated worlds receive each declaration.
-
-```rust
-#[component]
-#[scope(Game, Combat)]
-struct Health(i32);
-```
-
-generates separate `Health` storage in both worlds.
+Each inline `#[kutworld::world]` module is an isolated world. Components, archetypes, rules, and
+initial entities declared inside a world belong only to that world. Ordinary Rust items outside a
+world do not register declarations with it. The current Rust declaration implementation recognizes
+local component structs and type aliases.
 
 ```rust
-#[rule]
-#[scope(Game, Combat)]
-fn regenerate(...) {
-    ...
+pub mod components {
+    pub struct HealthData(i32);
+}
+
+#[kutworld::world]
+mod game {
+    #[component]
+    type Health = crate::components::HealthData;
+}
+
+#[kutworld::world]
+mod combat {
+    #[component]
+    type Health = crate::components::HealthData;
 }
 ```
 
-generates a world-specific rule implementation for each world.
-
-Scope relationships are validated before code generation.
+Each `Health` declaration has independent storage in its world. Component aliases should refer to
+nominal Rust types; KutWorld does not resolve the final alias target. Rust checks type validity and
+visibility.
 
 ## Components
 
-Component types provide semantic and Rust-level identity.
+Local component declaration names provide compiler-level component identity. Their Rust types
+provide data representation and type checking; a type alias can reuse ordinary Rust data without
+sharing world storage.
 
 Actual component values remain in world-owned storage.
 
 The compiler knows every component available in every world.
 
 This permits direct generated access without runtime component lookup.
+
+The current compiler's semantic `World` contains a vector of component metadata. The original
+`syn::ItemMod` stays in the parsing/code-generation path rather than in that semantic model. Metadata
+vectors are compile-time collections: generated runtime worlds use concrete fields for each
+component and, when implemented, each archetype. Archetype and rule metadata collections will be
+added when those concepts are implemented; these vectors do not imply vector-backed runtime storage.
 
 ## Archetypes
 
@@ -406,7 +425,6 @@ The compiler rejects:
 ```text
 redundant requirements
 contradictory requirements
-invalid scope references
 missing view guarantees
 empty queries
 ```
@@ -470,30 +488,32 @@ A snapshot freezes entity selection only; it does not make live component borrow
 structural changes. Generated Rust APIs must structurally prevent `add`, `remove`, or `despawn` from
 being called while the operation could invalidate a live component `&` or `&mut` borrow.
 
-## Rule IR
+## Semantic Model
 
-Both TOML and Rust rules lower into a common representation.
-
-Conceptually:
+The compiler model is organized around worlds and their declarations:
 
 ```text
-RuleIR
-├─ name
-├─ scope
-├─ query
-├─ view
-├─ guard
-├─ dependencies
-├─ serial
-├─ adds
-├─ removes
-├─ spawns
-├─ despawns
-├─ invocation mode
+World
+├─ components
+├─ archetypes
+└─ rules
+
+Component
+├─ local declaration name
+└─ Rust data type
+
+Archetype
+└─ required component names
+
+Rule
+├─ query and component access
+├─ guard and dependencies
+├─ structural capabilities
 └─ implementation
 ```
 
-Code generation depends on this IR, not on the original authoring format.
+Archetypes and rules are design concepts and are not implemented by the current declaration
+frontend. Generated component storage is specialized inside each world.
 
 ## Rust Rule Metadata
 
@@ -503,7 +523,6 @@ For example:
 
 ```rust
 #[rule]
-#[scope(Game)]
 #[query(has(Player, Health))]
 #[adds(Regenerating)]
 #[depends(input)]
@@ -519,7 +538,6 @@ query access
 read/write access
 structural access
 rule ordering
-scope
 ```
 
 without inspecting arbitrary Rust behavior.
@@ -893,7 +911,6 @@ The generated world does not need runtime reflection over:
 component names
 rule names
 archetype definitions
-scope relationships
 dependency graphs
 ```
 

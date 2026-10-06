@@ -6,7 +6,7 @@ use crate::Entity;
 ///
 /// Entity IDs are world-local and must be used with the world that allocated
 /// them. This storage primitive does not check entity liveness or component
-/// scope. Iteration order is unspecified and may change after removal.
+/// ownership. Iteration order is unspecified and may change after removal.
 #[derive(Debug)]
 pub struct SparseSet<T> {
     entities: Vec<Entity>,

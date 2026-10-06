@@ -9,4 +9,5 @@ mod sparse_set;
 
 pub use entity::{Entity, EntityAllocator};
 pub use entity_set::EntitySet;
+pub use kutworld_macros::world;
 pub use sparse_set::SparseSet;
