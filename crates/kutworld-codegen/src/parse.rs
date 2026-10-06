@@ -4,8 +4,8 @@ use syn::{ItemMod, Result};
 use crate::generate;
 use crate::model::World;
 
-mod archetype;
 mod component;
+mod indexed_query;
 
 pub(crate) fn parse_world(args: TokenStream, input: TokenStream) -> Result<ItemMod> {
     if !args.is_empty() {
@@ -31,10 +31,10 @@ fn collect_world(module: &mut ItemMod) -> Result<World> {
 
     let mut world = World {
         components: Vec::new(),
-        archetypes: Vec::new(),
+        indexed_queries: Vec::new(),
     };
-    archetype::collect(items, &mut world)?;
+    indexed_query::collect(items, &mut world)?;
     component::collect(items, &mut world)?;
-    archetype::validate(&world)?;
+    indexed_query::validate(&world)?;
     Ok(world)
 }

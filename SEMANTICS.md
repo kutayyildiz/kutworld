@@ -13,7 +13,7 @@ Each world owns its own:
 
 - entities
 - component storage
-- archetype indexes
+- indexes for indexed queries
 - rule schedule
 - execution cursor
 
@@ -23,10 +23,10 @@ Cross-world coordination is performed externally through world interfaces.
 
 ## World-Owned Declarations
 
-Each inline module marked `#[kutworld::world]` is an isolated world. Components, archetypes, rules,
+Each inline module marked `#[kutworld::world]` is an isolated world. Components, indexed queries, rules,
 and initial entities declared inside a world belong only to that world. Ordinary Rust items outside
 a world do not register declarations with it. The current Rust declaration implementation
-recognizes component structs and type aliases, plus unit-struct archetypes over local components.
+recognizes component structs and type aliases, plus unit-struct indexed queries over local components.
 
 An ordinary Rust type can provide data for local components in more than one world through aliases:
 
@@ -40,7 +40,7 @@ mod game {
     #[component]
     type Health = crate::components::HealthData;
 
-    #[archetype(Health)]
+    #[indexed_query(Health)]
     struct Healthy;
 }
 
@@ -55,8 +55,8 @@ These declarations use the same Rust data type, while each world owns independen
 Component type aliases should refer to nominal Rust types. KutWorld does not resolve the final alias
 target. Rust checks type validity and visibility.
 
-Each declared archetype currently receives an empty world-local entity index during construction.
-Rules, initial entities, and generated mutation code that maintain archetype membership are not
+Each declared indexed query currently receives an empty world-local entity index during construction.
+Rules, initial entities, and generated mutation code that maintain indexed query membership are not
 implemented yet.
 
 ## Components
@@ -146,29 +146,30 @@ If no rule can query them, they may effectively become unreachable world state.
 
 Preventing such dangling entities is the user's responsibility.
 
-## Archetypes
+## Indexed Queries
 
-An archetype is a named, maintained entity-membership index.
+An indexed query is a named declaration of positive component requirements. The world maintains an
+entity-ID index of the entities that match those requirements.
 
 It does not own or duplicate component values.
 
 ```rust
 #[kutworld::world]
 mod game {
-    #[archetype(Position, Velocity)]
+    #[indexed_query(Position, Velocity)]
     struct Moving;
 
-    #[archetype(Position, Velocity, Renderable)]
+    #[indexed_query(Position, Velocity, Renderable)]
     struct RenderableMoving;
 
-    #[archetype(Position, Velocity, Physics)]
+    #[indexed_query(Position, Velocity, Physics)]
     struct PhysicalMoving;
 }
 ```
 
-An archetype marker is supported on nongeneric unit structs and requires a nonempty list of unique,
-positive component names from the same world. Requirement order does not distinguish archetypes, and
-two archetypes in one world cannot declare the same component set.
+An indexed query marker is supported on nongeneric unit structs and requires a nonempty list of unique,
+positive component names from the same world. Requirement order does not distinguish indexed queries, and
+two indexed queries in one world cannot declare the same component set.
 
 These mean:
 
@@ -183,15 +184,16 @@ PhysicalMoving
     requires Position + Velocity + Physics
 ```
 
-### Positive Only
+### Indexed Query Definitions
 
-Archetypes contain positive component requirements only.
+Indexed query definitions contain positive component requirements only.
 
-Negative archetype requirements are not supported.
+Negative requirements within an indexed query definition are not supported. Rule queries may still
+negate an indexed query selector.
 
 ### At-Least Semantics
 
-Archetypes describe minimum component presence, not exact entity shape.
+Indexed queries describe minimum component presence, not exact entity shape.
 
 ```text
 Moving = { Position, Velocity }
@@ -209,31 +211,31 @@ and also:
 { Position, Velocity, Physics }
 ```
 
-Therefore one entity may belong to multiple archetypes simultaneously.
+Therefore one entity may belong to multiple indexed queries simultaneously.
 
 ### Flat Definitions
 
-Archetypes are defined directly from components.
+Indexed queries are defined directly from components.
 
 Valid:
 
 ```rust
-#[archetype(Position, Velocity, Physics)]
+#[indexed_query(Position, Velocity, Physics)]
 struct PhysicalMoving;
 ```
 
 Not supported:
 
 ```rust
-#[archetype(Moving, Physics)]
+#[indexed_query(Moving, Physics)]
 struct PhysicalMoving;
 ```
 
-Archetypes cannot contain other archetypes.
+Indexed queries cannot contain other indexed queries.
 
-### Duplicate Archetypes
+### Duplicate Indexed Queries
 
-Two archetypes with identical component requirements are invalid.
+Two indexed queries with identical component requirements are invalid.
 
 For example:
 
@@ -244,11 +246,11 @@ B = { Position, Velocity }
 
 is a compile-time error.
 
-### Unused Archetypes
+### Unused Indexed Queries
 
-An archetype that is never referenced by a query may produce a compiler warning.
+An indexed query that is never referenced by a query may produce a compiler warning.
 
-Maintaining such an archetype introduces structural-mutation cost without accelerating any query.
+Maintaining such an indexed query introduces structural-mutation cost without accelerating any query.
 
 ## Initial Entities
 
@@ -295,7 +297,7 @@ Structural changes are applied immediately.
 
 There is no semantic deferred-command buffer.
 
-Archetype membership is updated immediately after every component addition or removal.
+Indexed query membership is updated immediately after every component addition or removal.
 
 ## Spawn
 
@@ -317,7 +319,7 @@ add Velocity to x
 add Physics to x
 ```
 
-Each addition immediately updates relevant archetype indexes.
+Each addition immediately updates indexes for affected indexed queries.
 
 There is no separate batch-initialization semantic.
 
@@ -330,7 +332,7 @@ A rule may destroy its current queried entity or an entity spawned by that same 
 Destruction removes that entity from:
 
 - component storages
-- archetype indexes
+- indexes for indexed queries
 - world entity state
 
 A rule cannot mutate or destroy any other pre-existing entity.
@@ -364,7 +366,7 @@ Example:
 create entity x
 
 add Position
--> no archetype
+-> no indexed query
 
 add Velocity
 -> add x to A
@@ -375,13 +377,13 @@ add Physics
 
 The exact decision tree depends on which component was added.
 
-The compiler considers only archetypes affected by that component and may factor shared checks.
+The compiler considers only indexed queries affected by that component and may factor shared checks.
 
 ### Indexed Removal
 
 Removal uses direct invalidation.
 
-For the same archetypes:
+For the same indexed queries:
 
 ```text
 remove Position or Velocity
@@ -396,7 +398,7 @@ remove Physics
 -> remove C
 ```
 
-Positive-only archetypes make removal simple because a missing required component immediately
+Positive-only indexed queries make removal simple because a missing required component immediately
 invalidates membership.
 
 ## Rules
@@ -465,10 +467,10 @@ Rules must have a meaningful query.
 A rule with no query, or an empty query matching every entity implicitly, is not allowed.
 
 World-wide behavior should be expressed explicitly through world state and queryable
-components/archetypes.
+components/indexed queries.
 
 Every query must have a positive driving selector: a positive component requirement, a positive
-archetype requirement, or an explicit entity restriction. Negative-only queries such as `not Dead`
+indexed query requirement, or an explicit entity restriction. Negative-only queries such as `not Dead`
 are invalid. An entity-restricted query such as `entity == cached_id, not Dead` is driven by direct
 identity lookup; it does not require a scan of all live entities.
 
@@ -501,7 +503,7 @@ has Position
 has Velocity
 ```
 
-or implied through an archetype:
+or implied through an indexed query:
 
 ```text
 has Moving
@@ -543,9 +545,9 @@ is invalid.
 
 The rule may instead declare that it adds `Health`.
 
-## Archetypes in Queries
+## Indexed Queries in Rule Queries
 
-Archetypes may be used as query predicates.
+Indexed queries may be used as query predicates.
 
 ```text
 Moving = { Position, Velocity }
@@ -557,15 +559,15 @@ allows:
 #[query(has(Moving), not(Dead))]
 ```
 
-The maintained archetype index may then serve as the driving entity set.
+The indexed query's maintained entity index may then serve as the driving entity set.
 
-Archetypes are selectors only.
+Indexed queries are selectors only.
 
 They cannot appear as rule data arguments.
 
 ## Query Implication
 
-Archetypes imply their required components.
+Indexed queries imply their required components.
 
 ```text
 has Moving
@@ -695,8 +697,9 @@ remove C
 ```
 
 Structural access conflicts with concurrent rules based on all generated storage effects, including
-component storages and shared generated state such as archetype indexes and entity allocation,
-unless that state is explicitly synchronized. For example, if `Moving = { Position, Velocity }`,
+component storages and shared generated state such as membership indexes for indexed queries and
+entity allocation, unless that state is explicitly synchronized. For example, if
+`Moving = { Position, Velocity }`,
 adding either `Position` or `Velocity` may update the `Moving` index, so those additions conflict.
 
 For component `C`, structural access includes conflicts with concurrent rules that:
@@ -708,7 +711,7 @@ add C
 remove C
 query has(C)
 query not(C)
-use an archetype containing C
+use an indexed query containing C
 ```
 
 Adding `C` may:
@@ -1012,10 +1015,10 @@ iterate one component storage
 check remaining component presence
 ```
 
-An archetype-backed query may execute by:
+A rule query driven by an indexed query may execute by:
 
 ```text
-iterate maintained archetype membership
+iterate maintained indexed query membership
 ```
 
 The rule implementation does not know which strategy was selected.
@@ -1134,7 +1137,7 @@ entity
 component
     one kind of entity data
 
-archetype
+indexed query
     positive maintained entity index
 
 query

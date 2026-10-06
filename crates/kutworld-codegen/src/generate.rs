@@ -1,10 +1,10 @@
 use crate::model::World;
 
-mod archetype;
+mod component;
+mod indexed_query;
 // These generators will be called when generated structural mutation paths are implemented.
 #[allow(dead_code)]
-mod archetype_updates;
-mod component;
+mod indexed_query_updates;
 mod world;
 
 pub(crate) fn append_world(module: &mut syn::ItemMod, world: &World) -> syn::Result<()> {

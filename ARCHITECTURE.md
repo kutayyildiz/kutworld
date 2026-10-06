@@ -3,7 +3,7 @@
 This project generates specialized Rust code for declared worlds.
 
 The current Rust frontend handles inline `#[kutworld::world]` modules, local component structs and
-type aliases, and archetype declarations over local components. Planned TOML declarations and rules
+type aliases, and indexed query declarations over local components. Planned TOML declarations and rules
 may extend the compiler model without changing world ownership.
 
 The implementation favors compile-time specialization over runtime generality.
@@ -47,11 +47,11 @@ TOML declarations ─┐
 Rust declarations ─┘
                          │
                          ├─ resolve components
-                         ├─ resolve archetypes
+                         ├─ resolve indexed queries
                          ├─ normalize queries
                          ├─ validate rule views
                          ├─ derive structural access
-                         ├─ build archetype dependencies
+                         ├─ build indexed query dependencies
                          ├─ generate indexed mutation paths
                          ├─ build rule dependency graph
                          ├─ detect conflicts
@@ -78,7 +78,7 @@ SparseSet<T>
 EntitySet
 ```
 
-The core should not know about application-specific components, archetypes, or rules.
+The core should not know about application-specific components, indexed queries, or rules.
 
 It should also avoid:
 
@@ -165,10 +165,10 @@ There is no universal runtime `World` layout.
 
 ## World-Owned Declarations
 
-Each inline `#[kutworld::world]` module is an isolated world. Components, archetypes, rules, and
+Each inline `#[kutworld::world]` module is an isolated world. Components, indexed queries, rules, and
 initial entities declared inside a world belong only to that world. Ordinary Rust items outside a
 world do not register declarations with it. The current Rust declaration implementation recognizes
-local component structs, type aliases, and unit-struct archetypes over local components.
+local component structs, type aliases, and unit-struct indexed queries over local components.
 
 ```rust
 pub mod components {
@@ -180,7 +180,7 @@ mod game {
     #[component]
     type Health = crate::components::HealthData;
 
-    #[archetype(Health)]
+    #[indexed_query(Health)]
     struct Healthy;
 }
 
@@ -207,15 +207,15 @@ The compiler knows every component available in every world.
 
 This permits direct generated access without runtime component lookup.
 
-The current compiler's semantic `World` contains vectors of component and archetype metadata. The
-original `syn::ItemMod` stays in the parsing/code-generation path rather than in that semantic
+The current compiler's semantic `World` contains `components` and `indexed_queries` metadata vectors.
+The original `syn::ItemMod` stays in the parsing/code-generation path rather than in that semantic
 model. Metadata vectors are compile-time collections: generated runtime worlds use concrete fields
-for each component and archetype. Rule metadata will be added when rules are implemented; these
+for each component and indexed query. Rule metadata will be added when rules are implemented; these
 vectors do not imply vector-backed runtime storage.
 
-## Archetypes
+## Indexed Queries
 
-Archetypes are maintained `EntitySet`s.
+Indexed queries are maintained `EntitySet`s.
 
 They contain only entity membership.
 
@@ -224,12 +224,12 @@ They do not contain component values.
 For:
 
 ```rust
-#[archetype(Position, Velocity)]
+#[indexed_query(Position, Velocity)]
 struct Moving;
 ```
 
 The current frontend accepts this marker only on a nongeneric unit struct. Its nonempty requirement
-list contains unique, positive component names declared in the same world. Two archetypes cannot
+list contains unique, positive component names declared in the same world. Two indexed queries cannot
 declare the same component set, even in a different order. The compiler validates these names
 before code generation.
 
@@ -246,11 +246,12 @@ position: SparseSet<Position>
 velocity: SparseSet<Velocity>
 ```
 
-An archetype is therefore an indexed query accelerator rather than an exact-shape storage table.
+An indexed query is a named positive component query whose matching entity IDs are maintained as an
+index.
 
-## Archetype Dependency Map
+## Indexed Query Dependency Map
 
-The compiler derives which components affect which archetypes.
+The compiler derives which components affect which indexed queries.
 
 Given:
 
@@ -271,7 +272,7 @@ Physics    -> C
 
 This map drives generated structural mutation logic.
 
-Components absent from this map need no archetype-maintenance work.
+Components absent from this map need no work to maintain indexed queries.
 
 ## Single-Component Mutation Gateway
 
@@ -295,7 +296,7 @@ add Physics
 -> generated Physics add path
 ```
 
-This gives archetype maintenance one consistent mutation gateway.
+This gives indexed query maintenance one consistent mutation gateway.
 
 There is no separate batch-spawn initialization path.
 
@@ -314,7 +315,7 @@ capabilities and uses the same empty-entity and individual-add paths.
 
 ## Generated Add Paths
 
-For every component participating in archetypes, codegen collects the affected archetypes and
+For every component participating in indexed queries, codegen collects the affected indexed queries and
 derives the remaining membership requirements.
 
 For:
@@ -343,7 +344,7 @@ Velocity
 ```
 
 At each node it tests the most frequent remaining component, breaking ties by component declaration
-order. A presence check occurs at most once along a path, and every matching archetype is inserted.
+order. A presence check occurs at most once along a path, and every matching indexed query is inserted.
 The just-added component is never checked again.
 
 The generated implementation is specific to:
@@ -352,14 +353,14 @@ The generated implementation is specific to:
 world + component
 ```
 
-rather than using one generic runtime archetype updater.
+rather than using one generic runtime indexed query updater.
 
 This code-generation helper is implemented, but no generated mutation API calls it yet. Its caller
 must invoke it after a successful component insertion.
 
 ## Generated Remove Paths
 
-Removal is derived directly from the reverse archetype dependency map.
+Removal is derived directly from the reverse indexed query dependency map.
 
 For example:
 
@@ -370,8 +371,8 @@ remove Position
 -> remove C
 ```
 
-No presence-query reevaluation is required because archetypes contain positive requirements only.
-The removal generator emits direct removals from every archetype requiring the removed component.
+No presence-query reevaluation is required because indexed queries contain positive requirements only.
+The removal generator emits direct removals from every indexed query requiring the removed component.
 Like addition, this helper is not wired into a generated mutation API yet; its caller must invoke it
 after a successful component removal.
 
@@ -389,13 +390,13 @@ remove absent component
 
 Changing component values is handled separately from structural mutation.
 
-## Archetype Diagnostics
+## Indexed Query Diagnostics
 
-The compiler should reject duplicate archetypes.
+The compiler should reject duplicate indexed queries.
 
-It may warn for archetypes that are declared but never queried.
+It may warn for indexed queries that are declared but never queried.
 
-This is useful because maintained archetypes add structural-mutation cost even when unused.
+This is useful because maintained indexed queries add structural-mutation cost even when unused.
 
 ## Query Representation
 
@@ -406,15 +407,15 @@ A query contains logical selection terms such as:
 ```text
 has components
 not components
-has archetypes
-not archetypes
+has indexed queries
+not indexed queries
 entity restriction
 ```
 
-Archetype implications are expanded for validation.
+Indexed query implications are expanded for validation.
 
 Every query must have a positive driving selector: a positive component requirement, a positive
-archetype requirement, or an explicit entity restriction. Negative-only queries are invalid.
+indexed query requirement, or an explicit entity restriction. Negative-only queries are invalid.
 Entity-restricted queries use direct identity lookup and do not require a global live-entity scan.
 
 For example:
@@ -466,7 +467,7 @@ Both are compile-time errors.
 
 The compiler selects a query iteration strategy.
 
-Without an archetype, it may:
+Without an indexed query, it may:
 
 ```text
 choose a suitable component storage
@@ -474,10 +475,10 @@ iterate its dense entity set
 check remaining predicates
 ```
 
-With an archetype, it may:
+With an indexed query, it may:
 
 ```text
-iterate archetype membership directly
+iterate indexed query membership directly
 apply remaining filters
 ```
 
@@ -510,14 +511,14 @@ The compiler model is organized around worlds and their declarations:
 ```text
 World
 ├─ components
-├─ archetypes
+├─ indexed_queries
 └─ rules
 
 Component
 ├─ local declaration name
 └─ Rust data type
 
-Archetype
+IndexedQuery
 └─ required component names
 
 Rule
@@ -527,8 +528,8 @@ Rule
 └─ implementation
 ```
 
-Archetype declarations and generated empty `EntitySet` fields are implemented. Rules and the code
-that maintains archetype membership are not implemented yet. Generated component and archetype
+Indexed query declarations and generated empty `EntitySet` fields are implemented. Rules and the code
+that maintains indexed query membership are not implemented yet. Generated component and indexed query
 storage is specialized inside each world.
 
 ## Rust Rule Metadata
@@ -614,7 +615,7 @@ The compiler derives component access classes:
 -> structural
 ```
 
-Structural access also affects queries and archetypes that depend on the component.
+Structural access also affects queries and indexed queries that depend on the component.
 
 This information is used to construct scheduling conflicts.
 
@@ -654,7 +655,7 @@ other pre-existing entity.
 Spawn creates an empty entity and then uses standard component-add code paths.
 
 Despawn may target the current queried entity or an entity spawned by that same rule invocation;
-it cannot target another pre-existing entity. Despawn can invalidate component and archetype
+it cannot target another pre-existing entity. Despawn can invalidate component and indexed query
 membership and is handled conservatively by scheduling analysis.
 
 ## Dependency Graph
@@ -688,7 +689,7 @@ reads
 writes
 structural mutations
 queries
-archetype dependencies
+indexed query dependencies
 spawn/despawn capabilities
 serial constraints
 ```
@@ -696,7 +697,7 @@ serial constraints
 Conflicting rules with observable effects require an explicit dependency even when serially isolated.
 The compiler does not invent ordering between conflicting rules.
 
-Conflict analysis includes all generated storage writes, including shared archetype indexes and
+Conflict analysis includes all generated storage writes, including indexes for indexed queries and
 entity allocation, unless that state is explicitly synchronized. For example, when
 `Moving = { Position, Velocity }`, adding `Position` and adding `Velocity` both may update the
 `Moving` index, so those rules conflict even though they write different component storages.
@@ -907,7 +908,7 @@ The compiler may generate private helpers such as:
 ```text
 component insert/remove paths
 indexed mutation functions
-archetype membership updates
+indexed query membership updates
 query runners
 stage runners
 cursor advancement
@@ -926,7 +927,7 @@ The generated world does not need runtime reflection over:
 ```text
 component names
 rule names
-archetype definitions
+indexed query definitions
 dependency graphs
 ```
 
@@ -955,7 +956,7 @@ The generated world contains:
 
 ```text
 component sparse sets
-archetype entity indexes
+indexed query entity indexes
 specialized mutation paths
 specialized queries
 compiled scheduling stages

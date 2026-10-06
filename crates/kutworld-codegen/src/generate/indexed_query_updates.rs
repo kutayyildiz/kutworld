@@ -7,20 +7,20 @@ mod tests;
 
 #[derive(Clone)]
 struct Candidate {
-    archetype_index: usize,
+    indexed_query_index: usize,
     remaining: Vec<usize>,
 }
 
 pub(super) fn after_add(world: &World, component: &Component) -> TokenStream {
     let candidates = world
-        .archetypes
+        .indexed_queries
         .iter()
         .enumerate()
-        .filter_map(|(archetype_index, archetype)| {
-            if !archetype.components.contains(&component.name) {
+        .filter_map(|(indexed_query_index, indexed_query)| {
+            if !indexed_query.components.contains(&component.name) {
                 return None;
             }
-            let remaining = archetype
+            let remaining = indexed_query
                 .components
                 .iter()
                 .filter(|required| **required != component.name)
@@ -29,11 +29,11 @@ pub(super) fn after_add(world: &World, component: &Component) -> TokenStream {
                         .components
                         .iter()
                         .position(|item| item.name == *required)
-                        .expect("archetype requirements were validated")
+                        .expect("indexed query requirements were validated")
                 })
                 .collect();
             Some(Candidate {
-                archetype_index,
+                indexed_query_index,
                 remaining,
             })
         })
@@ -43,12 +43,12 @@ pub(super) fn after_add(world: &World, component: &Component) -> TokenStream {
 
 pub(super) fn after_remove(world: &World, component: &Component) -> TokenStream {
     let affected = world
-        .archetypes
+        .indexed_queries
         .iter()
         .enumerate()
-        .filter(|(_, archetype)| archetype.components.contains(&component.name))
+        .filter(|(_, indexed_query)| indexed_query.components.contains(&component.name))
         .map(|(index, _)| {
-            let field = format_ident!("__kutworld_archetype_{index}");
+            let field = format_ident!("__kutworld_indexed_query_{index}");
             quote!(self.#field.remove(entity);)
         });
     quote!(#(#affected)*)
@@ -59,7 +59,7 @@ fn generate_decisions(world: &World, candidates: Vec<Candidate>) -> TokenStream 
         .into_iter()
         .partition(|candidate| candidate.remaining.is_empty());
     let completed_updates = completed.iter().map(|candidate| {
-        let field = format_ident!("__kutworld_archetype_{}", candidate.archetype_index);
+        let field = format_ident!("__kutworld_indexed_query_{}", candidate.indexed_query_index);
         quote!(self.#field.insert(entity);)
     });
     if pending.is_empty() {

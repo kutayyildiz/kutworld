@@ -19,7 +19,7 @@ pub mod game {
     #[component]
     pub struct Player;
 
-    #[archetype(Health, Player)]
+    #[indexed_query(Health, Player)]
     pub struct AlivePlayer;
 }
 
@@ -37,10 +37,10 @@ fn main() {
 
 Component aliases should refer to nominal Rust types. KutWorld does not resolve the final alias
 target. The current declaration support recognizes local component structs and type aliases, then
-recognizes unit-struct archetypes with local component requirements. It generates component storage,
-empty archetype indexes, and `World::new()` / `Default` constructors. Rules, initial entities,
-archetype membership maintenance, and execution scheduling are not implemented yet.
-Archetype markers currently require nongeneric unit structs with nonempty, unique, local component
+recognizes unit-struct indexed queries with local component requirements. It generates component storage,
+empty indexes for declared indexed queries, and `World::new()` / `Default` constructors. Rules,
+initial entities, index membership maintenance, and execution scheduling are not implemented yet.
+Indexed query markers currently require nongeneric unit structs with nonempty, unique, local component
 requirements; identical requirement sets are rejected regardless of order.
 
 KutWorld is intentionally data-oriented:
@@ -49,7 +49,7 @@ KutWorld is intentionally data-oriented:
 - components hold data
 - queries select entities
 - rules operate on the current entity
-- archetypes provide maintained query indexes
+- indexed queries provide maintained entity-ID indexes for rule queries
 - dependencies define rule ordering
 - safe parallelism is derived at compile time
 - worlds are specialized through code generation
