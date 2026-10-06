@@ -11,7 +11,7 @@ pub(super) fn generate(world: &World) -> TokenStream {
     let indexed_query_fields = indexed_query::fields(world);
     let indexed_query_initializers = indexed_query::initializers(world);
     let initial_entity_initializers = initial_entity::initializers(world);
-    let mutation_methods = mutation::methods(world);
+    let mutation = mutation::generate(world);
     let world_value = quote! {
         Self {
             #allocator_field: ::kutworld::EntityAllocator::new(),
@@ -41,8 +41,9 @@ pub(super) fn generate(world: &World) -> TokenStream {
                 #new_body
             }
 
-            #(#mutation_methods)*
         }
+
+        #mutation
 
         impl ::core::default::Default for World {
             fn default() -> Self {

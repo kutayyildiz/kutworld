@@ -370,9 +370,9 @@ world + component
 
 rather than using one generic runtime indexed query updater.
 
-This helper is called by each generated private component-add method after storage accepts a new
-value. Duplicate insertion returns before indexed-query membership is changed. No public general
-mutation API calls these private methods yet.
+This helper is called by the generated private `AddComponent<T>` implementation after storage accepts
+a new value. Duplicate insertion returns before indexed-query membership is changed. Initial entity
+factories use the implementation directly; no public general mutation API exposes it.
 
 ## Generated Remove Paths
 
@@ -389,9 +389,10 @@ remove Position
 
 No presence-query reevaluation is required because indexed queries contain positive requirements only.
 The removal generator emits direct removals from every indexed query requiring the removed component.
-Each generated private component-remove method calls it only after storage returns a removed value;
-absent components return before indexed-query membership is changed. No public general mutation API
-calls these private methods yet.
+The generated private `RemoveComponent<T>` implementation calls it only after storage returns a
+removed value; absent components return before indexed-query membership is changed. Despawn uses the
+same implementation; future rule and External IR removal operations can share it. No public general
+mutation API exposes it.
 
 ## Harmless Structural No-Ops
 
@@ -915,9 +916,9 @@ tick()
 external IR preparation and capability APIs
 ```
 
-Initial entities are populated only from declarative configuration during construction. There is
-no general public spawn or component-add bootstrap method; rule-driven spawning is exposed only
-through the generated rule execution context.
+Initial entities are populated from Rust-authored factories during construction. TOML configuration
+input is planned. There is no general public spawn or component-add bootstrap method; rule-driven
+spawning is planned through the generated rule execution context.
 
 Storage internals and structural mutation helpers remain private.
 

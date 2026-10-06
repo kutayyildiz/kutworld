@@ -26,14 +26,13 @@ pub(super) fn initializers(world: &World) -> impl Iterator<Item = TokenStream> +
                     .iter()
                     .zip(&values)
                     .map(|(component_name, value)| {
-                        let component_index = world
-                            .components
-                            .iter()
-                            .position(|component| component.name == *component_name)
-                            .expect("initial entity components were validated");
-                        let add_method =
-                            format_ident!("__kutworld_add_component_{component_index}");
-                        quote! { world.#add_method(#entity, #value); }
+                        quote! {
+                            <Self as AddComponent<#component_name>>::add_component(
+                                &mut world,
+                                #entity,
+                                #value,
+                            );
+                        }
                     });
 
             quote! {

@@ -57,7 +57,8 @@ Component type aliases should refer to nominal Rust types. KutWorld does not res
 target. Rust checks type validity and visibility.
 
 Each declared indexed query receives a world-local entity index. During `World::new()`, Rust-authored
-initial entities populate indexes through the same generated per-component add paths used elsewhere.
+initial entities populate indexes through the same generated private `AddComponent<T>` implementations
+used elsewhere.
 Rule declarations and execution scheduling are not implemented yet. TOML initial-entity input remains
 unimplemented.
 
@@ -276,7 +277,8 @@ fn player() -> (Player, Health) {
 
 Each factory defines one initial entity. In declaration order, `World::new()` allocates a world-local
 entity ID, calls that factory once, then adds its returned component values individually through the
-same generated component-add paths used elsewhere. The empty tuple `()` creates an empty entity.
+same generated private `AddComponent<T>` implementations used elsewhere. The empty tuple `()` creates
+an empty entity.
 `Default` uses the same construction path. TOML initial-entity input is not implemented yet. There is
 no general public `world.spawn()` or `world.add()` bootstrap API.
 
