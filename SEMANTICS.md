@@ -756,7 +756,7 @@ physics must complete before collisions starts
 Dependencies express ordering only.
 
 During `tick()`, external rules are skipped and do not block internal rules that depend on them.
-This exception applies only to external rules skipped by `tick()`. External interface calls follow
+This exception applies only to External IRs skipped by `tick()`. Normal External IR calls follow
 the ordinary dependency and scheduling rules; they do not use this `tick()` exception.
 
 They do not imply:
@@ -905,35 +905,81 @@ Execution is advanced externally.
 
 Internal rules execute automatically when advancement reaches them.
 
-External interface rules are caller-controlled synchronization points within the same schedule.
-Each external interface is a hard schedule boundary. A parallel stage cannot span an interface,
-and each interface executes alone in its own stage, without parallel execution alongside internal
-rules or another interface. Internal rules are never targetable execution positions; execution may
-stop only at the requested external interface or at the cycle boundary.
+An External IR is a declared external rule and the sole coupling point between external code and a
+world. World internals remain private; generated External IR APIs expose only their declared query
+and allowed operations. Construction and cycle advancement are lifecycle operations and do not
+provide another way to access component data.
 
-## External Interface Rules
+An External IR statically declares its query and exact allowed component operations, including any
+reads, writes, additions, removals, or entity destruction. These effects participate in dependency
+analysis, conflict detection, ordering, indexed-query maintenance, and parallel scheduling. The
+generated API yields an IR-specific capability view for each matching entity, not a general entity
+handle. A capability exposes generated methods for only its declared operations: for example,
+`get_health()`, `set_velocity(...)`, and `add_dead()`. Its structural operations follow the same
+mutation boundary as rules: they may affect the currently queried entity or an entity spawned by the
+same invocation, but not another pre-existing entity. Generated Rust APIs must enforce borrow safety
+structurally: `add`, `remove`, and `despawn` cannot be called while they would invalidate a live
+component `&` or `&mut` borrow.
 
-External interface rules are semantically identical to internal rules.
+Each External IR is a hard schedule boundary. A parallel stage cannot span an External IR, and each
+executes alone in its own stage, without parallel execution alongside internal rules or another
+External IR. Internal rules are never targetable execution positions; advancement stops only at the
+requested External IR or at the cycle boundary.
 
-They use the same:
+## External IRs
+
+External IRs share query, access, dependency, conflict, and scheduling analysis with internal rules,
+but generated external APIs expose declared capabilities rather than an internal rule body. An
+External IR statically declares its query and exact allowed component operations. External code
+cannot perform operations outside that capability set.
+
+The declared effects participate in analysis of:
 
 ```text
 query
-view
-guard
+component reads and writes
+component additions and removals
+entity destruction
 dependencies
-structural capabilities
-mutation restrictions
-scheduling
+conflicts and ordering
+indexed-query maintenance
+parallel scheduling
 ```
 
-The only difference is how external rules enter normal advancement.
+Their external interaction occurs at their exclusive schedule boundary.
 
 Internal rules execute automatically when reached.
 
-External rules are processed according to the schedule and dependency graph during normal advancement;
-they are never implicitly skipped. An external rule required by a dependency executes normally.
-`tick()` is the only operation that skips external rules.
+Normal advancement follows the full schedule and dependency graph; external IRs are never implicitly
+skipped. An external IR required by a dependency executes normally. `tick()` is the only operation
+that skips external IRs.
+
+For example, an External IR may query `Moving`, read `Health`, write `Velocity`, and add `Dead`.
+Its generated lifecycle has a prepare/use/sync shape:
+
+```rust,ignore
+let mut world = World::new();
+let mut prepared = world.ext_moveable().prepare();
+
+for mut entity in prepared.iter() {
+    let health = entity.get_health();
+    if health == 0 {
+        entity.add_dead();
+    }
+}
+
+prepared.sync();
+```
+
+`prepare()` advances to the requested External IR boundary and establishes its prepared state. The
+iterator yields IR-specific capability views over matching entities, not general entity handles.
+`sync()` synchronizes external changes and closes the interaction; it does not itself advance the
+schedule. The External IR defines the public integration surface, and `sync()` is its explicit
+synchronization point. Both are conceptual and are not implemented yet.
+
+```text
+prepare -> prepared.iter() capabilities -> sync
+```
 
 ## External Advancement
 
@@ -949,42 +995,41 @@ InterfaceY
 E
 ```
 
-Calling `InterfaceX` from the beginning advances through:
+Preparing `InterfaceX` from the beginning advances through the schedule to its boundary:
 
 ```text
 A
 B
-InterfaceX
+prepare InterfaceX
 ```
 
-and stops after `InterfaceX`.
+The external code then uses only the capabilities yielded for `InterfaceX` and calls `sync()` to
+close the interaction.
 
-Calling `InterfaceY` next advances through:
+Preparing `InterfaceY` after that synchronization follows the remaining schedule and dependency graph:
 
 ```text
 C
 D
-InterfaceY
+prepare InterfaceY
 ```
 
-and stops after `InterfaceY`.
+External IRs required by dependencies are processed normally during advancement. No interface is
+implicitly skipped, and each remains an exclusive stage boundary. The scheduler stops at the
+requested boundary; external code then uses its capabilities and synchronizes.
 
-External interfaces are hard boundaries between generated stages and each executes alone. During
-normal advancement, external interfaces are not implicitly skipped; advancement follows the schedule
-and dependency graph, including any external rules required by dependencies. Execution stops after
-the requested interface or at the cycle boundary. Only `tick()` skips external interfaces and uses
-the dependency exception described above.
-
-Explicit manual skipping would require a separate API, such as `skip(...)`; no such API is currently
-defined.
+During normal advancement, external IRs are not implicitly skipped; advancement follows the schedule
+and dependency graph, including any external IR required by dependencies. Only `tick()` skips
+external IRs and uses the dependency exception described above. Explicit manual skipping would
+require a separate API, such as `skip(...)`; no such API is currently defined.
 
 If the requested interface lies before the current cursor:
 
 ```text
 1. finish the current cycle following the schedule and dependency graph
 2. begin the next cycle
-3. advance to the requested interface
-4. execute it
+3. advance to the requested external IR boundary
+4. establish its prepared state
 ```
 
 ## `tick()`
@@ -994,7 +1039,7 @@ If the requested interface lies before the current cursor:
 During `tick()`:
 
 - internal rules execute normally
-- all external interface rules are skipped
+- all External IRs are skipped
 
 Skipping an external rule does not block an internal rule that depends on it.
 

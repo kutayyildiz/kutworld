@@ -730,10 +730,10 @@ stage 1:
 
 Rules in one stage may execute in parallel.
 
-External interfaces are exclusive schedule boundaries. Each interface executes alone in its own
-stage, with no parallel execution alongside an internal rule or another interface. Stages cannot
-span an interface. Execution positions are targetable only at an external interface or the cycle
-boundary; internal rules always execute automatically while advancing to one of those positions.
+External IRs are exclusive schedule boundaries. Each executes alone in its own stage, with no
+parallel execution alongside an internal rule or another External IR. Stages cannot span an External
+IR. Execution positions are targetable only at an External IR or the cycle boundary; internal rules
+always execute automatically while advancing to one of those positions.
 
 ## Automatic Parallelization
 
@@ -789,42 +789,45 @@ Each world maintains a cursor into that schedule.
 
 The cursor allows execution to resume from the point where a previous interface call stopped.
 
-The execution position may only stop at the requested external interface boundary or at the cycle
+The execution position may only stop at the requested External IR boundary or at the cycle
 boundary.
 Internal rules are never addressable targets and are always executed automatically while advancing
-between external boundaries.
+between External IR boundaries.
 
-## External Interfaces
+## External IRs
 
-External interface rules use the same generated rule implementation as internal rules.
+External IRs are the sole coupling point between external code and a world. World internals remain
+private. An IR declares a query and its exact allowed component operations. Each yielded entity is an
+IR-specific capability view, not a general entity handle. Construction and cycle advancement are
+lifecycle operations, not alternate component access paths.
 
-The difference is scheduling metadata:
+Declared query and allowed operations are collected, their concrete component storage, indexed-query,
+and allocation effects are resolved, and static dependency, conflict, order, and stage analysis uses
+those effects. Code generation then emits IR-specific prepare, prepared iterator, entity capability,
+and sync APIs. External IRs share analysis semantics with internal rules but generate capability APIs
+instead of internal rule bodies.
 
-```text
-internal
--> automatically execute when reached
+The generated API and explicit synchronization point are conceptual and not implemented yet. Its
+lifecycle is `prepare` at the requested IR boundary, interact through yielded capabilities, then
+`sync` to synchronize external changes and close the interaction. Sync does not itself advance the
+schedule.
 
-external
--> process during normal advancement according to the schedule and dependency graph
-```
-
-Generated external methods advance the world cursor until the requested interface is reached.
-
-During normal advancement, external interfaces are never implicitly skipped. Advancement follows the
-schedule and dependency graph, including any external rules required by dependencies. Execution stops
-only after the requested interface or at the cycle boundary. Each interface remains an exclusive
-stage boundary. Only `tick()` skips external interfaces and uses the dependency exception described
-above.
+Each external IR is an exclusive stage boundary. No parallel stage may span one, and an external IR
+does not execute in parallel with an internal rule or another external IR. Internal rules are never
+targetable positions. Normal advancement follows the complete schedule and dependency graph without
+implicitly skipping external IRs; an external IR required by a dependency executes normally. The
+scheduler stops at the requested boundary or cycle boundary. Only `tick()` skips external IRs and
+uses the dependency exception described above.
 
 Explicit manual skipping would require a separate API, such as `skip(...)`; no such API is currently
 defined.
 
-The execution position may only stop at the requested external interface boundary or at the cycle
+The execution position may only stop at the requested external IR boundary or at the cycle
 boundary.
 Internal rules are never addressable targets and are always executed automatically while advancing
-between external boundaries.
+between external IR boundaries.
 
-## Interface Cursor Advancement
+## External IR Cursor Advancement
 
 For:
 
@@ -838,37 +841,39 @@ Y(external)
 E
 ```
 
-calling `X` generates behavior equivalent to:
+preparing `X` advances to its boundary after running preceding internal rules and any external IRs
+required by dependencies. It then establishes the prepared capability state:
 
 ```text
-run A
-run B
-run X
-stop
+run A and B
+prepare X
+external capability interaction
+sync X
 ```
 
-Calling `Y` next:
+Preparing `Y` next follows the remaining schedule and dependency graph, including any required
+external IRs, then allows interaction and synchronization:
 
 ```text
-run C
-run D
-run Y
-stop
+run C and D
+prepare Y
+external capability interaction
+sync Y
 ```
 
-Calling `X` again:
+If `X` is requested again after `Y`:
 
 ```text
-run E
-finish cycle
-
-run A
-run B
-run X
-stop
+finish remaining cycle work
+begin next cycle
+run A and B
+prepare X
+external capability interaction
+sync X
 ```
 
-This behavior is compiled into the world's generated interface methods.
+The generated preparation methods follow this schedule. Explicit manual skipping would require a
+separate API such as `skip(...)`; no such API is defined.
 
 ## `tick()`
 
@@ -878,9 +883,9 @@ Every world may expose:
 tick()
 ```
 
-`tick()` advances to the end of the current cycle while skipping all external interface rules.
-Those skipped external rules do not block internal dependents; this exception applies only to
-external rules skipped by `tick()`.
+`tick()` advances to the end of the current cycle while skipping all external IRs. Those skipped
+external IRs do not block internal dependents; this exception applies only to external IRs skipped by
+`tick()`.
 
 If called from the cycle start, it executes one complete internal cycle.
 
@@ -892,7 +897,7 @@ The public world API consists primarily of:
 
 ```text
 tick()
-external rule interfaces
+external IR preparation and capability APIs
 ```
 
 Initial entities are populated only from declarative configuration during construction. There is
@@ -963,7 +968,7 @@ specialized mutation paths
 specialized queries
 compiled scheduling stages
 cycle cursor
-external interface methods
+external IR prepare/capability methods
 ```
 
 The handwritten runtime contains only the generic storage and identity primitives needed by that

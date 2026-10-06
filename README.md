@@ -44,6 +44,11 @@ not implemented yet.
 Indexed query markers currently require nongeneric unit structs with nonempty, unique, local component
 requirements; identical requirement sets are rejected regardless of order.
 
+External IRs are the sole coupling point between external code and a world; world internals remain
+private. The conceptual generated API exposes only each IR's declared query and allowed operations:
+prepare at its schedule boundary, iterate IR-specific entity capabilities, then sync to close the
+interaction. This public integration API is not implemented yet.
+
 KutWorld is intentionally data-oriented:
 
 - entities are opaque IDs
