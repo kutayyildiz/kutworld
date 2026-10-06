@@ -5,7 +5,7 @@ use quote::{format_ident, quote};
 use super::indexed_query_updates;
 
 pub(super) fn methods(world: &World) -> impl Iterator<Item = TokenStream> + '_ {
-    world
+    let component_methods = world
         .components
         .iter()
         .enumerate()
@@ -43,5 +43,17 @@ pub(super) fn methods(world: &World) -> impl Iterator<Item = TokenStream> + '_ {
                     }
                 },
             ]
-        })
+        });
+    let remove_calls = world.components.iter().enumerate().map(|(index, _)| {
+        let remove_method = format_ident!("__kutworld_remove_component_{index}");
+        quote! { let _ = self.#remove_method(_entity); }
+    });
+    let despawn_method = quote! {
+        #[allow(dead_code)]
+        fn __kutworld_despawn(&mut self, _entity: ::kutworld::Entity) {
+            #(#remove_calls)*
+        }
+    };
+
+    component_methods.chain(std::iter::once(despawn_method))
 }
