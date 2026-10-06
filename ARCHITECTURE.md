@@ -355,8 +355,9 @@ world + component
 
 rather than using one generic runtime indexed query updater.
 
-This code-generation helper is implemented, but no generated mutation API calls it yet. Its caller
-must invoke it after a successful component insertion.
+This helper is called by each generated private component-add method after storage accepts a new
+value. Duplicate insertion returns before indexed-query membership is changed. No public general
+mutation API calls these private methods yet.
 
 ## Generated Remove Paths
 
@@ -373,8 +374,9 @@ remove Position
 
 No presence-query reevaluation is required because indexed queries contain positive requirements only.
 The removal generator emits direct removals from every indexed query requiring the removed component.
-Like addition, this helper is not wired into a generated mutation API yet; its caller must invoke it
-after a successful component removal.
+Each generated private component-remove method calls it only after storage returns a removed value;
+absent components return before indexed-query membership is changed. No public general mutation API
+calls these private methods yet.
 
 ## Harmless Structural No-Ops
 
@@ -528,9 +530,9 @@ Rule
 └─ implementation
 ```
 
-Indexed query declarations and generated empty `EntitySet` fields are implemented. Rules and the code
-that maintains indexed query membership are not implemented yet. Generated component and indexed query
-storage is specialized inside each world.
+Indexed query declarations, generated empty `EntitySet` fields, and private component mutation
+methods that maintain indexed-query membership are implemented. Rules and public mutation APIs are
+not implemented yet. Generated component and indexed-query storage is specialized inside each world.
 
 ## Rust Rule Metadata
 

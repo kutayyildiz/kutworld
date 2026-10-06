@@ -2,7 +2,7 @@ use crate::model::World;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::{component, indexed_query};
+use super::{component, indexed_query, mutation};
 
 pub(super) fn generate(world: &World) -> TokenStream {
     let allocator_field = format_ident!("__kutworld_allocator");
@@ -10,6 +10,7 @@ pub(super) fn generate(world: &World) -> TokenStream {
     let component_initializers = component::initializers(world);
     let indexed_query_fields = indexed_query::fields(world);
     let indexed_query_initializers = indexed_query::initializers(world);
+    let mutation_methods = mutation::methods(world);
     quote! {
         pub struct World {
             #[allow(dead_code)]
@@ -26,6 +27,8 @@ pub(super) fn generate(world: &World) -> TokenStream {
                     #(#indexed_query_initializers,)*
                 }
             }
+
+            #(#mutation_methods)*
         }
 
         impl ::core::default::Default for World {

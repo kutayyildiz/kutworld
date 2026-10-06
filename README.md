@@ -38,8 +38,9 @@ fn main() {
 Component aliases should refer to nominal Rust types. KutWorld does not resolve the final alias
 target. The current declaration support recognizes local component structs and type aliases, then
 recognizes unit-struct indexed queries with local component requirements. It generates component storage,
-empty indexes for declared indexed queries, and `World::new()` / `Default` constructors. Rules,
-initial entities, index membership maintenance, and execution scheduling are not implemented yet.
+empty indexes for declared indexed queries, private component add/remove methods, and `World::new()` /
+`Default` constructors. Rules, initial entities, public mutation APIs, and execution scheduling are
+not implemented yet.
 Indexed query markers currently require nongeneric unit structs with nonempty, unique, local component
 requirements; identical requirement sets are rejected regardless of order.
 
