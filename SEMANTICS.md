@@ -26,7 +26,8 @@ Cross-world coordination is performed externally through world interfaces.
 Each inline module marked `#[kutworld::world]` is an isolated world. Components, indexed queries, rules,
 and initial entities declared inside a world belong only to that world. Ordinary Rust items outside
 a world do not register declarations with it. The current Rust declaration implementation
-recognizes component structs and type aliases, plus unit-struct indexed queries over local components.
+recognizes component structs and type aliases, unit-struct indexed queries over local components, and
+`#[initial_entity]` factory functions.
 
 An ordinary Rust type can provide data for local components in more than one world through aliases:
 
@@ -55,9 +56,10 @@ These declarations use the same Rust data type, while each world owns independen
 Component type aliases should refer to nominal Rust types. KutWorld does not resolve the final alias
 target. Rust checks type validity and visibility.
 
-Each declared indexed query currently receives an empty world-local entity index during construction.
-Rules, initial entities, and generated mutation code that maintain indexed query membership are not
-implemented yet.
+Each declared indexed query receives a world-local entity index. During `World::new()`, Rust-authored
+initial entities populate indexes through the same generated per-component add paths used elsewhere.
+Rule declarations and execution scheduling are not implemented yet. TOML initial-entity input remains
+unimplemented.
 
 ## Components
 
@@ -254,7 +256,7 @@ Maintaining such an indexed query introduces structural-mutation cost without ac
 
 ## Initial Entities
 
-Initial world population is declared in configuration:
+Initial world population may be declared in configuration:
 
 ```toml
 [entities.player]
@@ -262,9 +264,21 @@ player = true
 health = 20
 ```
 
-World construction creates each declared entity empty, then adds its components one at a time
-through the same generated component-add paths used during rule execution. There is no general
-public `world.spawn()` or `world.add()` bootstrap API.
+The Rust-authored counterpart is a no-argument function marked `#[initial_entity]` with a tuple return
+type naming local components:
+
+```rust
+#[initial_entity]
+fn player() -> (Player, Health) {
+    (Player, Health(20))
+}
+```
+
+Each factory defines one initial entity. In declaration order, `World::new()` allocates a world-local
+entity ID, calls that factory once, then adds its returned component values individually through the
+same generated component-add paths used elsewhere. The empty tuple `()` creates an empty entity.
+`Default` uses the same construction path. TOML initial-entity input is not implemented yet. There is
+no general public `world.spawn()` or `world.add()` bootstrap API.
 
 ## Structural Mutation
 

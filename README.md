@@ -21,6 +21,11 @@ pub mod game {
 
     #[indexed_query(Health, Player)]
     pub struct AlivePlayer;
+
+    #[initial_entity]
+    fn player() -> (Player, Health) {
+        (Player, crate::components::HealthData(20))
+    }
 }
 
 #[kutworld::world]
@@ -36,10 +41,13 @@ fn main() {
 ```
 
 Component aliases should refer to nominal Rust types. KutWorld does not resolve the final alias
-target. The current declaration support recognizes local component structs and type aliases, then
-recognizes unit-struct indexed queries with local component requirements. It generates component
-storage, empty indexes for declared indexed queries, private component add/remove methods and a private
-despawn helper, plus `World::new()` / `Default` constructors. Rules, initial entities, public mutation
+target. The current declaration support recognizes local component structs and type aliases,
+unit-struct indexed queries with local component requirements, and `#[initial_entity]` Rust
+factory functions. Each factory is safe, synchronous, non-generic, and parameterless; it returns a
+tuple of bare local component names. For each factory in declaration order, `World::new()` allocates
+an ID, calls it once, and adds its values through generated component paths. It generates component
+storage, maintained indexes for declared indexed queries, private component add/remove and despawn
+methods, and `World::new()` / `Default` constructors. TOML initial entities, rules, public mutation
 APIs, and execution scheduling are not implemented yet.
 Indexed query markers currently require nongeneric unit structs with nonempty, unique, local component
 requirements; identical requirement sets are rejected regardless of order.

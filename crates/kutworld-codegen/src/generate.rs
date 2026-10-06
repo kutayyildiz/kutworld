@@ -3,6 +3,7 @@ use crate::model::World;
 mod component;
 mod indexed_query;
 mod indexed_query_updates;
+mod initial_entity;
 mod mutation;
 mod world;
 

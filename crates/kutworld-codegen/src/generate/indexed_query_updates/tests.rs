@@ -36,6 +36,7 @@ fn fixture_world() -> World {
             indexed_query("Unrelated", &["C1"]),
             indexed_query("C0C1C3", &["C0", "C1", "C3"]),
         ],
+        initial_entities: Vec::new(),
     }
 }
 
@@ -47,6 +48,7 @@ fn generated_updates_match_component_sets_for_all_small_masks() {
     let no_indexed_queries = World {
         components: vec![component("C0")],
         indexed_queries: Vec::new(),
+        initial_entities: Vec::new(),
     };
     assert!(after_add(&no_indexed_queries, &no_indexed_queries.components[0]).is_empty());
     assert!(after_remove(&no_indexed_queries, &no_indexed_queries.components[0]).is_empty());
@@ -54,6 +56,7 @@ fn generated_updates_match_component_sets_for_all_small_masks() {
     let singleton_world = World {
         components: vec![component("C0")],
         indexed_queries: vec![indexed_query("OnlyC0", &["C0"])],
+        initial_entities: Vec::new(),
     };
     let singleton_add = after_add(&singleton_world, &singleton_world.components[0]);
     assert!(!singleton_add.to_string().contains("contains"));
@@ -64,6 +67,7 @@ fn generated_updates_match_component_sets_for_all_small_masks() {
             indexed_query("First", &["C0", "C1"]),
             indexed_query("Second", &["C0", "C2"]),
         ],
+        initial_entities: Vec::new(),
     };
     let tie_code = after_add(&tie_world, &tie_world.components[0]).to_string();
     assert!(tie_code.starts_with("if self . __kutworld_component_1 . contains"));

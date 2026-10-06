@@ -3,8 +3,8 @@
 This project generates specialized Rust code for declared worlds.
 
 The current Rust frontend handles inline `#[kutworld::world]` modules, local component structs and
-type aliases, and indexed query declarations over local components. Planned TOML declarations and rules
-may extend the compiler model without changing world ownership.
+type aliases, indexed query declarations over local components, and `#[initial_entity]` factories.
+Planned TOML declarations and rules may extend the compiler model without changing world ownership.
 
 The implementation favors compile-time specialization over runtime generality.
 
@@ -168,7 +168,8 @@ There is no universal runtime `World` layout.
 Each inline `#[kutworld::world]` module is an isolated world. Components, indexed queries, rules, and
 initial entities declared inside a world belong only to that world. Ordinary Rust items outside a
 world do not register declarations with it. The current Rust declaration implementation recognizes
-local component structs, type aliases, and unit-struct indexed queries over local components.
+local component structs, type aliases, unit-struct indexed queries over local components, and
+`#[initial_entity]` factory functions.
 
 ```rust
 pub mod components {
@@ -300,7 +301,7 @@ This gives indexed query maintenance one consistent mutation gateway.
 
 There is no separate batch-spawn initialization path.
 
-Initial entities are declared in configuration, for example:
+TOML initial entities can be declared in configuration, for example:
 
 ```toml
 [entities.player]
@@ -308,10 +309,24 @@ player = true
 health = 20
 ```
 
-World construction creates each declared entity empty and adds its components individually through
-these same generated component-add paths. There is no general public `world.spawn()` or
-`world.add()` bootstrap API. Rule-driven spawning remains available through declared rule
-capabilities and uses the same empty-entity and individual-add paths.
+Rust-authored initial entities are declared by no-argument functions returning tuples of local
+component types:
+
+```rust
+#[initial_entity]
+fn player() -> (Player, Health) {
+    (Player, Health(20))
+}
+```
+
+Tuple elements are bare local component names; `(Health,)` creates one component and `()` creates an
+empty entity. Factories are no-argument, non-generic, safe synchronous functions.
+
+For each factory in declaration order, `World::new()` allocates a world-local entity ID, calls the
+factory once, and adds each returned component through its generated per-component path, maintaining
+indexed-query membership. `Default` delegates to `new()`. TOML initial-entity input and rule-driven
+spawning are not implemented yet; there is no general public `world.spawn()` or `world.add()` bootstrap
+API.
 
 ## Generated Add Paths
 

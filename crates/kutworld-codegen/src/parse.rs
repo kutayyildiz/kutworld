@@ -6,6 +6,7 @@ use crate::model::World;
 
 mod component;
 mod indexed_query;
+mod initial_entity;
 
 pub(crate) fn parse_world(args: TokenStream, input: TokenStream) -> Result<ItemMod> {
     if !args.is_empty() {
@@ -32,9 +33,12 @@ fn collect_world(module: &mut ItemMod) -> Result<World> {
     let mut world = World {
         components: Vec::new(),
         indexed_queries: Vec::new(),
+        initial_entities: Vec::new(),
     };
+    initial_entity::collect(items, &mut world)?;
     indexed_query::collect(items, &mut world)?;
     component::collect(items, &mut world)?;
     indexed_query::validate(&world)?;
+    initial_entity::validate(&world)?;
     Ok(world)
 }
