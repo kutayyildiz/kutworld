@@ -19,6 +19,9 @@ pub mod game {
     #[component]
     pub struct Player;
 
+    #[component]
+    pub struct Dead;
+
     #[indexed_query(Health, Player)]
     pub struct AlivePlayer;
 
@@ -26,6 +29,14 @@ pub mod game {
     fn player() -> (Player, Health) {
         (Player, crate::components::HealthData(20))
     }
+
+    #[allow(dead_code)]
+    #[rule]
+    #[query(has(Player, Health), not(Dead))]
+    fn regenerate(health: &mut Health) {
+        health.0 += 1;
+    }
+
 }
 
 #[kutworld::world]
@@ -44,14 +55,15 @@ Component aliases should refer to nominal Rust types. KutWorld does not resolve 
 target. Within one world, component aliases must identify distinct Rust types so their generated
 private trait implementations do not overlap; the same nominal data type may be reused in separate
 worlds. The current declaration support recognizes local component structs and type aliases,
-unit-struct indexed queries with local component requirements, and `#[initial_entity]` Rust
-factory functions. Each factory is safe, synchronous, non-generic, and parameterless; it returns a
-tuple of bare local component names. For each factory in declaration order, `World::new()` allocates
-an ID, calls it once, and adds its values through generated component paths. It generates component
-storage, maintained indexes for declared indexed queries, private `AddComponent<T>` and
-`RemoveComponent<T>` implementations, a private despawn helper, and `World::new()` / `Default`
-constructors. TOML initial entities, rules, public mutation APIs, and execution scheduling are not
-implemented yet.
+unit-struct indexed queries with local component requirements, Rust rule metadata, and
+`#[initial_entity]` factory functions. Rule attributes and component-reference views are collected
+and validated; the rule function body remains ordinary Rust. Each factory is safe, synchronous,
+non-generic, and parameterless; it returns a tuple of bare local component names. For each factory
+in declaration order, `World::new()` allocates an ID, calls it once, and adds its values through
+generated component paths. It generates component storage, maintained indexes for declared indexed
+queries, private `AddComponent<T>` and `RemoveComponent<T>` implementations, a private despawn helper,
+and `World::new()` / `Default` constructors. TOML initial entities, rule execution, conflict analysis
+and scheduling, and public mutation APIs are not implemented yet.
 Indexed query markers currently require nongeneric unit structs with nonempty, unique, local component
 requirements; identical requirement sets are rejected regardless of order.
 

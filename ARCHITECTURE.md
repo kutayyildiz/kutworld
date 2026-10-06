@@ -3,8 +3,9 @@
 This project generates specialized Rust code for declared worlds.
 
 The current Rust frontend handles inline `#[kutworld::world]` modules, local component structs and
-type aliases, indexed query declarations over local components, and `#[initial_entity]` factories.
-Planned TOML declarations and rules may extend the compiler model without changing world ownership.
+type aliases, indexed query declarations over local components, `#[initial_entity]` factories, and
+Rust rule metadata collection and validation. Planned TOML declarations and rule execution may extend
+the compiler model without changing world ownership.
 
 The implementation favors compile-time specialization over runtime generality.
 
@@ -208,11 +209,11 @@ The compiler knows every component available in every world.
 
 This permits direct generated access without runtime component lookup.
 
-The current compiler's semantic `World` contains `components` and `indexed_queries` metadata vectors.
-The original `syn::ItemMod` stays in the parsing/code-generation path rather than in that semantic
-model. Metadata vectors are compile-time collections: generated runtime worlds use concrete fields
-for each component and indexed query. Rule metadata will be added when rules are implemented; these
-vectors do not imply vector-backed runtime storage.
+The current compiler's semantic `World` contains `components`, `indexed_queries`,
+`initial_entities`, and `rules` metadata vectors. The original `syn::ItemMod` stays in the
+parsing/code-generation path rather than in that semantic model. Metadata vectors are compile-time
+collections: generated runtime worlds use concrete fields for each component and indexed query.
+They do not imply vector-backed runtime storage.
 
 ## Indexed Queries
 
@@ -546,13 +547,15 @@ Rule
 └─ implementation
 ```
 
-Indexed query declarations, generated empty `EntitySet` fields, and private component mutation
-methods that maintain indexed-query membership are implemented. Rules and public mutation APIs are
-not implemented yet. Generated component and indexed-query storage is specialized inside each world.
+Indexed query declarations, generated maintained `EntitySet` fields, private component mutation
+traits, and Rust rule metadata collection/validation are implemented. Rule execution, conflict
+analysis, scheduling, TOML declarations, and public mutation APIs are not implemented yet. Generated
+component and indexed-query storage is specialized inside each world.
 
 ## Rust Rule Metadata
 
-Rust rules provide semantic metadata through attributes and function signatures.
+Rust rules provide semantic metadata through attributes and function signatures. The current parser
+collects and validates this metadata while preserving the Rust function and body.
 
 For example:
 
@@ -566,16 +569,26 @@ fn regenerate(health: &mut Health) {
 }
 ```
 
-The compiler derives:
+The `Rule` metadata record contains:
 
 ```text
-query access
-read/write access
-structural access
-rule ordering
+positive and negative selectors
+read and write component views
+add/remove component declarations
+spawn/despawn flags
+dependencies
+serial flag
 ```
 
-without inspecting arbitrary Rust behavior.
+Selectors and operations must name local components or indexed queries as appropriate. View parameters
+are `&LocalComponent` or `&mut LocalComponent`; their access is derived from the reference. Component,
+indexed-query, and rule references are resolved after collection, so declarations can refer forward.
+Validation checks positive driving selectors, view guarantees, redundant or contradictory
+requirements, and dependency cycles. The compiler does not inspect arbitrary Rust function behavior.
+
+This step does not generate rule invocation, conflict analysis, a scheduler, guard handling, or
+entity-restricted query execution. `#[serial]` and structural metadata are collected only; no ordering
+or execution is inferred from them here. Unrecognized helper attributes remain for Rust to reject.
 
 ## TOML Rule Compilation
 

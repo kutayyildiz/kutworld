@@ -59,8 +59,8 @@ target. Rust checks type validity and visibility.
 Each declared indexed query receives a world-local entity index. During `World::new()`, Rust-authored
 initial entities populate indexes through the same generated private `AddComponent<T>` implementations
 used elsewhere.
-Rule declarations and execution scheduling are not implemented yet. TOML initial-entity input remains
-unimplemented.
+Rust rule metadata collection and validation are implemented. Rule execution, conflict analysis, and
+scheduling are not; TOML initial-entity input remains unimplemented.
 
 ## Components
 
@@ -1138,6 +1138,17 @@ TOML is intended for simple local dataflow and conditions.
 ## Rust Rules
 
 Rust rules provide the general-purpose implementation path.
+
+The current frontend collects `#[rule]`, one `#[query(has(...), not(...))]`, `#[adds(...)]`,
+`#[removes(...)]`, `#[spawns]`, `#[despawns]`, `#[depends(...)]`, and `#[serial]`. Rule functions
+must be safe, synchronous, and nongeneric. Their parameters must be references to bare local
+component types (`&Component` or `&mut Component`), with at most one view per component. `has` must
+provide a positive driver; selectors resolve only to local components or indexed queries. Views must
+be guaranteed by the positive query. Selector redundancy and contradiction, unknown names, repeated
+metadata, and dependency cycles are rejected. Function signatures and bodies remain Rust and are
+type-checked by `rustc`. This metadata-only slice does not execute rules, derive conflicts, or schedule
+them. Guard and entity-restricted query metadata are not part of the supported subset; unrecognized
+helper attributes remain for Rust to reject.
 
 ```rust
 #[rule]
