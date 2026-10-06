@@ -11,3 +11,6 @@ readme.workspace = true
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3"

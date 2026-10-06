@@ -33,17 +33,17 @@ fn remove_marker(attrs: &mut Vec<Attribute>) -> Result<()> {
                     "#[component] does not accept arguments",
                 ));
             }
+            if count > 1 {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "duplicate #[component] attribute",
+                ));
+            }
         } else {
             retained.push(attr);
         }
     }
     *attrs = retained;
-    if count > 1 {
-        return Err(syn::Error::new(
-            proc_macro2::Span::call_site(),
-            "duplicate #[component] attribute",
-        ));
-    }
     Ok(())
 }
 

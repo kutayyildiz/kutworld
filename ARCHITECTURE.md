@@ -333,7 +333,7 @@ B -> Velocity + Renderable
 C -> Velocity + Physics
 ```
 
-These may be factored into a shared decision tree:
+The add-update generator recursively factors the residual requirements into a decision tree:
 
 ```text
 Velocity
@@ -342,8 +342,9 @@ Velocity
 └─ Physics    -> add C
 ```
 
-More generally, codegen may factor common component requirements so each presence check is reused
-where possible.
+At each node it tests the most frequent remaining component, breaking ties by component declaration
+order. A presence check occurs at most once along a path, and every matching archetype is inserted.
+The just-added component is never checked again.
 
 The generated implementation is specific to:
 
@@ -352,6 +353,9 @@ world + component
 ```
 
 rather than using one generic runtime archetype updater.
+
+This code-generation helper is implemented, but no generated mutation API calls it yet. Its caller
+must invoke it after a successful component insertion.
 
 ## Generated Remove Paths
 
@@ -367,6 +371,9 @@ remove Position
 ```
 
 No presence-query reevaluation is required because archetypes contain positive requirements only.
+The removal generator emits direct removals from every archetype requiring the removed component.
+Like addition, this helper is not wired into a generated mutation API yet; its caller must invoke it
+after a successful component removal.
 
 ## Harmless Structural No-Ops
 

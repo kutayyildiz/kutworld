@@ -1,6 +1,9 @@
 use crate::model::World;
 
 mod archetype;
+// These generators will be called when generated structural mutation paths are implemented.
+#[allow(dead_code)]
+mod archetype_updates;
 mod component;
 mod world;
 
