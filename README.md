@@ -49,6 +49,35 @@ private. The conceptual generated API exposes only each IR's declared query and 
 prepare at its schedule boundary, iterate IR-specific entity capabilities, then sync to close the
 interaction. This public integration API is not implemented yet.
 
+## Planned Hybrid Query and Storage Model
+
+Planned, not implemented: sparse component storage remains the default; queries may opt into
+archetype-table optimization without changing semantics. This differs from supported indexed
+queries.
+
+Optimized storage has one table per exact component set. A positive query `has [A, C]` matches every
+table containing both, such as `{A, C}`, `{A, B, C}`, `{A, C, D}`, and `{A, B, C, D}`. Codegen
+precomputes matching tables for direct bulk traversal of component columns aligned within each
+table, without per-entity sparse lookups. Tables have independent row order; each entity occupies
+only its own table, so overlapping queries do not duplicate component values. Non-opted components
+and queries keep the regular path.
+
+An internal location index maps an opaque entity ID to its current storage location, such as a table
+and row. `physics.filtered_iter([id1, id2, id3])` resolves each ID, checks membership in the External
+IR's query, and yields the same generated item type as normal iteration. A list of N IDs takes
+approximately N direct indexed lookups rather than scanning all matches; this is not
+`Iterator::filter` over a bulk query. `physics.filtered_iter([id])` supports a single targeted ID.
+With archetype optimization enabled, `physics.iter()` walks matching tables sequentially for
+locality; otherwise it uses the regular query path. Filtering only narrows selection, adding no
+access capability or generic `World::get_entity`.
+
+One canonical internal add/remove path per component type will update ordinary storage, table
+membership, entity location, and affected indexed-query entries. Internal `AddComponent<T>` and
+`RemoveComponent<T>` traits are the conceptual route used by rules and External IR wrappers. A
+per-entity operation such as `entity.add_health(health)` is restricted to the current entity, not a
+general external mutation API. This adds neither systems nor entity-reference graphs to the flat
+model.
+
 KutWorld is intentionally data-oriented:
 
 - entities are opaque IDs
