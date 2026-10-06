@@ -26,7 +26,7 @@ pub(super) fn generate(world: &World) -> TokenStream {
             #[allow(dead_code)]
             #allocator_field: ::kutworld::EntityAllocator,
             #(#component_fields,)*
-            #archetype_fields
+            #(#archetype_fields,)*
         }
 
         impl World {
@@ -34,7 +34,7 @@ pub(super) fn generate(world: &World) -> TokenStream {
                 Self {
                     #allocator_field: ::kutworld::EntityAllocator::new(),
                     #(#component_initializers,)*
-                    #archetype_initializers
+                    #(#archetype_initializers,)*
                 }
             }
         }
