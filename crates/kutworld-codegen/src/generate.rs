@@ -1,6 +1,7 @@
 use crate::model::World;
 
 mod archetype;
+mod component;
 mod world;
 
 pub(crate) fn append_world(module: &mut syn::ItemMod, world: &World) -> syn::Result<()> {

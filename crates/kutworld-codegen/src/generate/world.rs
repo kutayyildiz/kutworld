@@ -2,23 +2,12 @@ use crate::model::World;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::archetype;
+use super::{archetype, component};
 
 pub(super) fn generate(world: &World) -> TokenStream {
     let allocator_field = format_ident!("__kutworld_allocator");
-    let component_fields = world
-        .components
-        .iter()
-        .enumerate()
-        .map(|(index, component)| {
-            let field = format_ident!("__kutworld_component_{index}");
-            let component_name = &component.name;
-            quote! { #[allow(dead_code)] #field: ::kutworld::SparseSet<#component_name> }
-        });
-    let component_initializers = world.components.iter().enumerate().map(|(index, _)| {
-        let field = format_ident!("__kutworld_component_{index}");
-        quote!(#field: ::kutworld::SparseSet::new())
-    });
+    let component_fields = component::fields(world);
+    let component_initializers = component::initializers(world);
     let archetype_fields = archetype::fields(world);
     let archetype_initializers = archetype::initializers(world);
     quote! {
