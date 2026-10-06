@@ -18,6 +18,9 @@ pub mod game {
 
     #[component]
     pub struct Player;
+
+    #[archetype(Health, Player)]
+    pub struct AlivePlayer;
 }
 
 #[kutworld::world]
@@ -34,8 +37,11 @@ fn main() {
 
 Component aliases should refer to nominal Rust types. KutWorld does not resolve the final alias
 target. The current declaration support recognizes local component structs and type aliases, then
-generates each world's component storage and `World::new()` / `Default` constructors. Rules,
-archetypes, initial entities, and execution scheduling are not implemented yet.
+recognizes unit-struct archetypes with local component requirements. It generates component storage,
+empty archetype indexes, and `World::new()` / `Default` constructors. Rules, initial entities,
+archetype membership maintenance, and execution scheduling are not implemented yet.
+Archetype markers currently require nongeneric unit structs with nonempty, unique, local component
+requirements; identical requirement sets are rejected regardless of order.
 
 KutWorld is intentionally data-oriented:
 

@@ -2,6 +2,8 @@ use crate::model::World;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
+use super::archetype;
+
 pub(super) fn generate(world: &World) -> TokenStream {
     let allocator_field = format_ident!("__kutworld_allocator");
     let component_fields = world
@@ -17,11 +19,14 @@ pub(super) fn generate(world: &World) -> TokenStream {
         let field = format_ident!("__kutworld_component_{index}");
         quote!(#field: ::kutworld::SparseSet::new())
     });
+    let archetype_fields = archetype::fields(world);
+    let archetype_initializers = archetype::initializers(world);
     quote! {
         pub struct World {
             #[allow(dead_code)]
             #allocator_field: ::kutworld::EntityAllocator,
             #(#component_fields,)*
+            #archetype_fields
         }
 
         impl World {
@@ -29,6 +34,7 @@ pub(super) fn generate(world: &World) -> TokenStream {
                 Self {
                     #allocator_field: ::kutworld::EntityAllocator::new(),
                     #(#component_initializers,)*
+                    #archetype_initializers
                 }
             }
         }

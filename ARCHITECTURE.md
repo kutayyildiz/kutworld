@@ -2,9 +2,9 @@
 
 This project generates specialized Rust code for declared worlds.
 
-The current Rust frontend handles inline `#[kutworld::world]` modules and their local component
-structs and type aliases. Planned TOML declarations, archetypes, and rules may extend the compiler
-model without changing world ownership.
+The current Rust frontend handles inline `#[kutworld::world]` modules, local component structs and
+type aliases, and archetype declarations over local components. Planned TOML declarations and rules
+may extend the compiler model without changing world ownership.
 
 The implementation favors compile-time specialization over runtime generality.
 
@@ -168,7 +168,7 @@ There is no universal runtime `World` layout.
 Each inline `#[kutworld::world]` module is an isolated world. Components, archetypes, rules, and
 initial entities declared inside a world belong only to that world. Ordinary Rust items outside a
 world do not register declarations with it. The current Rust declaration implementation recognizes
-local component structs and type aliases.
+local component structs, type aliases, and unit-struct archetypes over local components.
 
 ```rust
 pub mod components {
@@ -179,6 +179,9 @@ pub mod components {
 mod game {
     #[component]
     type Health = crate::components::HealthData;
+
+    #[archetype(Health)]
+    struct Healthy;
 }
 
 #[kutworld::world]
@@ -204,11 +207,11 @@ The compiler knows every component available in every world.
 
 This permits direct generated access without runtime component lookup.
 
-The current compiler's semantic `World` contains a vector of component metadata. The original
-`syn::ItemMod` stays in the parsing/code-generation path rather than in that semantic model. Metadata
-vectors are compile-time collections: generated runtime worlds use concrete fields for each
-component and, when implemented, each archetype. Archetype and rule metadata collections will be
-added when those concepts are implemented; these vectors do not imply vector-backed runtime storage.
+The current compiler's semantic `World` contains vectors of component and archetype metadata. The
+original `syn::ItemMod` stays in the parsing/code-generation path rather than in that semantic
+model. Metadata vectors are compile-time collections: generated runtime worlds use concrete fields
+for each component and archetype. Rule metadata will be added when rules are implemented; these
+vectors do not imply vector-backed runtime storage.
 
 ## Archetypes
 
@@ -225,7 +228,12 @@ For:
 struct Moving;
 ```
 
-the world may contain:
+The current frontend accepts this marker only on a nongeneric unit struct. Its nonempty requirement
+list contains unique, positive component names declared in the same world. Two archetypes cannot
+declare the same component set, even in a different order. The compiler validates these names
+before code generation.
+
+The generated world contains:
 
 ```rust
 moving: EntitySet
@@ -512,8 +520,9 @@ Rule
 └─ implementation
 ```
 
-Archetypes and rules are design concepts and are not implemented by the current declaration
-frontend. Generated component storage is specialized inside each world.
+Archetype declarations and generated empty `EntitySet` fields are implemented. Rules and the code
+that maintains archetype membership are not implemented yet. Generated component and archetype
+storage is specialized inside each world.
 
 ## Rust Rule Metadata
 

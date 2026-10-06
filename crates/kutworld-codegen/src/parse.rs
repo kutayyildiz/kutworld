@@ -4,6 +4,7 @@ use syn::{ItemMod, Result};
 use crate::generate;
 use crate::model::World;
 
+mod archetype;
 mod component;
 
 pub(crate) fn parse_world(args: TokenStream, input: TokenStream) -> Result<ItemMod> {
@@ -30,7 +31,10 @@ fn collect_world(module: &mut ItemMod) -> Result<World> {
 
     let mut world = World {
         components: Vec::new(),
+        archetypes: Vec::new(),
     };
+    archetype::collect(items, &mut world)?;
     component::collect(items, &mut world)?;
+    archetype::validate(&world)?;
     Ok(world)
 }

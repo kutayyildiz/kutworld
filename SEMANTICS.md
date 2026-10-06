@@ -26,7 +26,7 @@ Cross-world coordination is performed externally through world interfaces.
 Each inline module marked `#[kutworld::world]` is an isolated world. Components, archetypes, rules,
 and initial entities declared inside a world belong only to that world. Ordinary Rust items outside
 a world do not register declarations with it. The current Rust declaration implementation
-recognizes component structs and type aliases only.
+recognizes component structs and type aliases, plus unit-struct archetypes over local components.
 
 An ordinary Rust type can provide data for local components in more than one world through aliases:
 
@@ -39,6 +39,9 @@ pub mod components {
 mod game {
     #[component]
     type Health = crate::components::HealthData;
+
+    #[archetype(Health)]
+    struct Healthy;
 }
 
 #[kutworld::world]
@@ -51,6 +54,10 @@ mod combat {
 These declarations use the same Rust data type, while each world owns independent `Health` storage.
 Component type aliases should refer to nominal Rust types. KutWorld does not resolve the final alias
 target. Rust checks type validity and visibility.
+
+Each declared archetype currently receives an empty world-local entity index during construction.
+Rules, initial entities, and generated mutation code that maintain archetype membership are not
+implemented yet.
 
 ## Components
 
@@ -158,6 +165,10 @@ mod game {
     struct PhysicalMoving;
 }
 ```
+
+An archetype marker is supported on nongeneric unit structs and requires a nonempty list of unique,
+positive component names from the same world. Requirement order does not distinguish archetypes, and
+two archetypes in one world cannot declare the same component set.
 
 These mean:
 
