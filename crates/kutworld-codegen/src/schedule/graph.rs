@@ -226,10 +226,10 @@ impl DependencyGraph {
         let mut nodes = Vec::new();
         let mut path = Vec::new();
         for &v in scc {
-            if state[v] == 0 {
-                if let Some(c) = dfs(v, &adj, &mut state, &mut nodes, &mut path) {
-                    return c;
-                }
+            if state[v] == 0
+                && let Some(c) = dfs(v, &adj, &mut state, &mut nodes, &mut path)
+            {
+                return c;
             }
         }
         Vec::new()

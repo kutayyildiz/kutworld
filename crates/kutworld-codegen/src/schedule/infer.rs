@@ -25,17 +25,17 @@ pub(super) fn infer(world: &World) -> DependencyGraph {
         }
     }
     for a in 0..n {
-        for b in 0..n {
+        for (b, b_membership) in membership.iter().enumerate() {
             if a == b {
                 continue;
             }
             let (ra, rb) = (&world.rules[a], &world.rules[b]);
             for aa in &ra.accesses {
                 for ab in &rb.accesses {
-                    if aa.component == ab.component {
-                        if let Some(reason) = access_reason(aa.kind, ab.kind, &aa.component) {
-                            push(&mut edges, a, b, reason)
-                        }
+                    if aa.component == ab.component
+                        && let Some(reason) = access_reason(aa.kind, ab.kind, &aa.component)
+                    {
+                        push(&mut edges, a, b, reason)
                     }
                 }
             }
@@ -65,7 +65,7 @@ pub(super) fn infer(world: &World) -> DependencyGraph {
                         },
                     );
                 }
-                for (component, selector, polarity) in &membership[b] {
+                for (component, selector, polarity) in b_membership {
                     if component == mutated {
                         push(
                             &mut edges,
@@ -83,7 +83,7 @@ pub(super) fn infer(world: &World) -> DependencyGraph {
                     }
                 }
             }
-            if !membership[b].is_empty() {
+            if !b_membership.is_empty() {
                 if ra.spawns {
                     push(
                         &mut edges,

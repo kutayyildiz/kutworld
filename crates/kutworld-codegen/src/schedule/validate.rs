@@ -113,13 +113,13 @@ pub(super) fn validate_choices(
         }
         seen.push(*id);
     }
-    if let Some(region) = &resolution.unresolved_region {
-        if region.is_empty() || region.iter().any(|node| *node >= graph.nodes) {
-            return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
-                "cycle resolver returned an invalid unresolved region",
-            ));
-        }
+    if let Some(region) = &resolution.unresolved_region
+        && (region.is_empty() || region.iter().any(|node| *node >= graph.nodes))
+    {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "cycle resolver returned an invalid unresolved region",
+        ));
     }
     Ok(())
 }

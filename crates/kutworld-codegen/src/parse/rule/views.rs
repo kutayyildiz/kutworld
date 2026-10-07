@@ -83,13 +83,12 @@ pub(super) fn collect(signature: &mut Signature) -> Result<Vec<RuleAccess>> {
             .attrs
             .iter()
             .find(|attr| attr.path().is_ident("write_only"))
+            && !matches!(attr.meta, syn::Meta::Path(_))
         {
-            if !matches!(attr.meta, syn::Meta::Path(_)) {
-                return Err(syn::Error::new_spanned(
-                    attr,
-                    "`#[write_only]` does not accept arguments",
-                ));
-            }
+            return Err(syn::Error::new_spanned(
+                attr,
+                "`#[write_only]` does not accept arguments",
+            ));
         }
         if viewed.contains(component) {
             return Err(syn::Error::new_spanned(
