@@ -542,15 +542,17 @@ IndexedQuery
 
 Rule
 ├─ query and component access
-├─ guard and dependencies
+├─ inferred dependency edges and break authorizations
+├─ guard metadata
 ├─ structural capabilities
 └─ implementation
 ```
 
 Indexed query declarations, generated maintained `EntitySet` fields, private component mutation
-traits, and Rust rule metadata collection/validation are implemented. Rule execution, conflict
-analysis, scheduling, TOML declarations, and public mutation APIs are not implemented yet. Generated
-component and indexed-query storage is specialized inside each world.
+traits, Rust rule metadata collection, inferred dependency scheduling, cycle resolution, and stable
+rule ordering are implemented. Rule execution, parallel conflict analysis, TOML declarations, and
+public mutation APIs are not implemented yet. Generated component and indexed-query storage is
+specialized inside each world.
 
 ## Rust Rule Metadata
 
@@ -563,7 +565,6 @@ For example:
 #[rule]
 #[query(has(Player, Health))]
 #[adds(Regenerating)]
-#[depends(input)]
 fn regenerate(health: &mut Health) {
     ...
 }
@@ -573,10 +574,10 @@ The `Rule` metadata record contains:
 
 ```text
 positive and negative selectors
-read and write component views
+read, read-write, and write-only component views
 add/remove component declarations
 spawn/despawn flags
-dependencies
+targeted cycle-break authorizations
 serial flag
 ```
 
@@ -584,11 +585,15 @@ Selectors and operations must name local components or indexed queries as approp
 are `&LocalComponent` or `&mut LocalComponent`; their access is derived from the reference. Component,
 indexed-query, and rule references are resolved after collection, so declarations can refer forward.
 Validation checks positive driving selectors, view guarantees, redundant or contradictory
-requirements, and dependency cycles. The compiler does not inspect arbitrary Rust function behavior.
+requirements, and inferred dependency scheduling. `&T` means read, `&mut T` means read-write, and
+`#[write_only] &mut T` means write-only by programmer contract. The compiler does not inspect arbitrary
+Rust function behavior.
 
-This step does not generate rule invocation, conflict analysis, a scheduler, guard handling, or
-entity-restricted query execution. `#[serial]` and structural metadata are collected only; no ordering
-or execution is inferred from them here. Unrecognized helper attributes remain for Rust to reject.
+The scheduler infers ordering from strict component access transitions and structural effects that
+overlap component or query membership. `#[break_cycle(rule)]` authorizes removal of one inferred
+incoming edge when needed to resolve a cycle. `#[depends(...)]` is rejected. `#[serial]` remains
+execution metadata and creates no dependency. Generated rustdoc records the computed order; rules are
+not invoked yet.
 
 ## TOML Rule Compilation
 
@@ -639,6 +644,9 @@ The compiler derives component access classes:
 -> read
 
 &mut Component
+-> read-write
+
+#[write_only] &mut Component
 -> write
 
 #[adds(Component)]
@@ -648,7 +656,9 @@ The compiler derives component access classes:
 
 Structural access also affects queries and indexed queries that depend on the component.
 
-This information is used to construct scheduling conflicts.
+This information is used to infer strict semantic dependencies. Equal access classes remain
+unordered. Source declaration order only selects a stable topological order among otherwise valid
+choices.
 
 ## Current-Entity Restriction
 
@@ -691,29 +701,48 @@ membership and is handled conservatively by scheduling analysis.
 
 ## Dependency Graph
 
-Explicit dependencies form a DAG.
-
-```rust
-#[depends(physics)]
-fn collisions(...) {}
-```
-
-creates:
-
-```text
-physics -> collisions
-```
-
-Cycles are compile-time errors.
+Dependencies are inferred from component access and structural effects. `#[break_cycle(physics)]`
+authorizes removal of the inferred `physics -> collisions` edge if needed to resolve a cycle.
+`#[depends(...)]` is rejected. Cycles without sufficient targeted break authorizations are
+compile-time errors.
 
 The dependency graph provides semantic ordering. During `tick()`, external rules are skipped and
 do not block internal rules that depend on them. This exception applies only to external rules
 skipped by `tick()`. Ordinary external-interface calls follow the dependency graph and scheduling
 rules without this `tick()` exception.
 
+## Scheduling Subsystem
+
+`kutworld-codegen::schedule` separates semantic inference, graph mechanics, common validation,
+resolver policy, and generation. Inference produces one edge per ordered rule pair and retains typed
+reasons for every interaction. The graph provides stable rule and edge identities, SCC analysis,
+temporary active-edge masks, cycle extraction, and stable topological sorting. The `CycleResolver`
+interface receives inferred edges and validated authorizations. Common validation constructs
+span-preserving `BreakAuthorization` values, which the resolver consumes without depending on the
+validation module. Resolvers cannot redefine inference or generation. A centralized resolver kind
+dispatch currently selects v1.
+
+V1 repeatedly selects the cyclic SCC containing the earliest source rule. For each authorized edge
+inside it, v1 temporarily removes the edge and recomputes SCCs. It prefers fewer cyclic nodes, then
+fewer internal edges in cyclic SCCs, then the weaker strongest reason on the edge, then source rule
+indices. V1's explicit strength order, from weakest to strongest, is `ReadWrite -> Read`,
+`Write -> ReadWrite`, `Write -> Read`, structural component ordering, then structural entity
+ordering. Add and remove component reasons share the component strength; spawn and despawn share the
+entity strength. An edge with several reasons takes its strongest reason. The ranking is centralized
+in resolver policy and is independent of enum declaration order. V1 recomputes after each removal
+and never enumerates simple cycles.
+
+Common validation rejects unknown, self, or non-inferred authorizations; unresolved cycles; unused
+markers; and any selected edge that can be restored without making the final graph cyclic. These
+checks validate the selected resolver result without searching for a globally minimum set of breaks.
+Each break permission targets exactly one direct inferred incoming edge. It does not remove or
+authorize removal of other paths between the same rules; any surviving path remains in the graph.
+The generated `World` rustdoc records inferred reasons, resolver, selected breaks, and final order;
+it does not claim that rules execute.
+
 ## Conflict Graph
 
-The compiler separately derives rule conflicts from:
+Future parallel conflict analysis may consider:
 
 ```text
 reads
@@ -725,8 +754,8 @@ spawn/despawn capabilities
 serial constraints
 ```
 
-Conflicting rules with observable effects require an explicit dependency even when serially isolated.
-The compiler does not invent ordering between conflicting rules.
+Dependency inference and conflict exclusion are separate: equal access classes do not acquire an
+arbitrary order merely because they may conflict for parallel execution.
 
 Conflict analysis includes all generated storage writes, including indexes for indexed queries and
 entity allocation, unless that state is explicitly synchronized. For example, when
@@ -735,7 +764,7 @@ entity allocation, unless that state is explicitly synchronized. For example, wh
 
 ## Stage Generation
 
-The dependency and conflict graphs are lowered into execution stages.
+The dependency graph is topologically ordered. Execution stages are not implemented.
 
 For example:
 
@@ -768,25 +797,18 @@ always execute automatically while advancing to one of those positions.
 
 Parallel execution is generated automatically.
 
-Users specify:
-
-```text
-dependencies
-access
-structural capabilities
-serial constraints
-```
-
-The compiler derives parallelism.
+Users specify component access intent, structural effects, targeted cycle-break permissions, and
+serial metadata. The compiler infers ordinary dependencies and computes a stable order. Parallel
+stages are not implemented.
 
 There is no explicit positive parallelization directive.
 
 ## Serial Rules
 
-`#[serial]` causes the rule to receive an exclusive stage. It does not establish ordering between
-conflicting rules; observable conflicts still require explicit dependencies.
+`#[serial]` is retained as execution metadata. It does not establish ordering or change the inferred
+dependency graph. Rules are not executed by the current generated schedule.
 
-This is generated directly into the schedule rather than checked dynamically at runtime.
+This may be lowered into exclusive execution stages when rule execution is implemented.
 
 ## Guard Generation
 

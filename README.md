@@ -62,8 +62,9 @@ non-generic, and parameterless; it returns a tuple of bare local component names
 in declaration order, `World::new()` allocates an ID, calls it once, and adds its values through
 generated component paths. It generates component storage, maintained indexes for declared indexed
 queries, private `AddComponent<T>` and `RemoveComponent<T>` implementations, a private despawn helper,
-and `World::new()` / `Default` constructors. TOML initial entities, rule execution, conflict analysis
-and scheduling, and public mutation APIs are not implemented yet.
+and `World::new()` / `Default` constructors. Codegen computes the inferred rule schedule and documents
+it on `World`. TOML initial entities, rule execution, parallel conflict analysis, and public mutation
+APIs are not implemented yet.
 Indexed query markers currently require nongeneric unit structs with nonempty, unique, local component
 requirements; identical requirement sets are rejected regardless of order.
 

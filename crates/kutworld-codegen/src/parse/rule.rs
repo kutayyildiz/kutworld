@@ -3,7 +3,6 @@ use syn::{Item, Result};
 use crate::model::{Rule, World};
 
 mod attributes;
-mod dependencies;
 mod query;
 mod views;
 
@@ -21,6 +20,13 @@ pub(super) fn collect(items: &mut [Item], world: &mut World) -> Result<()> {
                 "a function cannot be both a rule and an initial entity factory",
             ));
         }
+        if attributes::has_attribute(&function.attrs, "write_only") {
+            let attr = attributes::one_attribute(&function.attrs, "write_only")?.unwrap();
+            return Err(syn::Error::new_spanned(
+                attr,
+                "`#[write_only]` is only valid on an `&mut Component` rule parameter",
+            ));
+        }
 
         let rule_attr =
             attributes::one_attribute(&function.attrs, "rule")?.expect("rule marker checked");
@@ -33,10 +39,17 @@ pub(super) fn collect(items: &mut [Item], world: &mut World) -> Result<()> {
             )
         })?;
         let (has, not) = query::parse(query_attr)?;
-        let (reads, writes) = views::collect(&function.sig)?;
+        let accesses = views::collect(&mut function.sig)?;
         let adds = attributes::parse_name_attribute(&function.attrs, "adds")?;
         let removes = attributes::parse_name_attribute(&function.attrs, "removes")?;
-        let depends = attributes::parse_name_attribute(&function.attrs, "depends")?;
+        if attributes::has_attribute(&function.attrs, "depends") {
+            let attr = attributes::one_attribute(&function.attrs, "depends")?.unwrap();
+            return Err(syn::Error::new_spanned(
+                attr,
+                "`#[depends(...)]` has been removed; dependencies are inferred from rule effects",
+            ));
+        }
+        let break_cycle = attributes::parse_name_attribute(&function.attrs, "break_cycle")?;
         let spawns = attributes::parse_flag_attribute(&function.attrs, "spawns")?;
         let despawns = attributes::parse_flag_attribute(&function.attrs, "despawns")?;
         let serial = attributes::parse_flag_attribute(&function.attrs, "serial")?;
@@ -45,11 +58,10 @@ pub(super) fn collect(items: &mut [Item], world: &mut World) -> Result<()> {
             name: function.sig.ident.clone(),
             has,
             not,
-            reads,
-            writes,
+            accesses,
             adds,
             removes,
-            depends,
+            break_cycle,
             spawns,
             despawns,
             serial,
@@ -72,7 +84,16 @@ pub(super) fn validate(world: &World) -> Result<()> {
                 ));
             }
         }
-        dependencies::validate_rule(world, rule)?;
     }
-    dependencies::validate_cycles(world)
+    let mut names = Vec::new();
+    for rule in &world.rules {
+        if names.contains(&rule.name) {
+            return Err(syn::Error::new_spanned(
+                &rule.name,
+                format!("duplicate rule name `{}`", rule.name),
+            ));
+        }
+        names.push(rule.name.clone());
+    }
+    Ok(())
 }

@@ -1,3 +1,4 @@
+use crate::model::{AccessKind, RuleAccess};
 use syn::{FnArg, Result, Signature, Type};
 
 pub(super) fn validate_signature(signature: &Signature) -> Result<()> {
@@ -22,11 +23,10 @@ pub(super) fn validate_signature(signature: &Signature) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn collect(signature: &Signature) -> Result<(Vec<syn::Ident>, Vec<syn::Ident>)> {
-    let mut reads = Vec::new();
-    let mut writes = Vec::new();
+pub(super) fn collect(signature: &mut Signature) -> Result<Vec<RuleAccess>> {
+    let mut accesses = Vec::new();
     let mut viewed = Vec::new();
-    for input in &signature.inputs {
+    for input in &mut signature.inputs {
         let FnArg::Typed(argument) = input else {
             return Err(syn::Error::new_spanned(
                 input,
@@ -51,6 +51,46 @@ pub(super) fn collect(signature: &Signature) -> Result<(Vec<syn::Ident>, Vec<syn
                 "rule views must reference a bare local component type",
             ));
         };
+        let write_only = argument
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("write_only"))
+            .count();
+        if write_only > 1 {
+            let attr = argument
+                .attrs
+                .iter()
+                .filter(|attr| attr.path().is_ident("write_only"))
+                .nth(1)
+                .unwrap();
+            return Err(syn::Error::new_spanned(
+                attr,
+                "duplicate `#[write_only]` attribute",
+            ));
+        }
+        if write_only == 1 && reference.mutability.is_none() {
+            let attr = argument
+                .attrs
+                .iter()
+                .find(|attr| attr.path().is_ident("write_only"))
+                .unwrap();
+            return Err(syn::Error::new_spanned(
+                attr,
+                "`#[write_only]` is only valid on `&mut Component` rule parameters",
+            ));
+        }
+        if let Some(attr) = argument
+            .attrs
+            .iter()
+            .find(|attr| attr.path().is_ident("write_only"))
+        {
+            if !matches!(attr.meta, syn::Meta::Path(_)) {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "`#[write_only]` does not accept arguments",
+                ));
+            }
+        }
         if viewed.contains(component) {
             return Err(syn::Error::new_spanned(
                 &argument.ty,
@@ -58,11 +98,59 @@ pub(super) fn collect(signature: &Signature) -> Result<(Vec<syn::Ident>, Vec<syn
             ));
         }
         viewed.push(component.clone());
-        if reference.mutability.is_some() {
-            writes.push(component.clone());
+        let kind = if reference.mutability.is_some() {
+            if write_only == 1 {
+                AccessKind::Write
+            } else {
+                AccessKind::ReadWrite
+            }
         } else {
-            reads.push(component.clone());
-        }
+            AccessKind::Read
+        };
+        accesses.push(RuleAccess {
+            component: component.clone(),
+            kind,
+        });
+        argument
+            .attrs
+            .retain(|attr| !attr.path().is_ident("write_only"));
     }
-    Ok((reads, writes))
+    Ok(accesses)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn access_annotations_are_interpreted_and_removed() {
+        let mut signature: Signature = syn::parse_quote! {
+            fn rule(plain: &C, mutable: &mut D, #[write_only] produced: &mut E)
+        };
+        let accesses = collect(&mut signature).unwrap();
+        assert_eq!(
+            accesses.iter().map(|a| a.kind).collect::<Vec<_>>(),
+            vec![AccessKind::Read, AccessKind::ReadWrite, AccessKind::Write]
+        );
+        assert!(!quote::quote!(#signature).to_string().contains("write_only"));
+    }
+
+    #[test]
+    fn write_only_rejects_immutable_and_argument_forms() {
+        let mut immutable: Signature = syn::parse_quote! {fn rule(#[write_only] value:&C)};
+        assert!(
+            collect(&mut immutable)
+                .unwrap_err()
+                .to_string()
+                .contains("only valid on `&mut Component`")
+        );
+        let mut malformed: Signature =
+            syn::parse_quote! {fn rule(#[write_only(read)] value:&mut C)};
+        assert!(
+            collect(&mut malformed)
+                .unwrap_err()
+                .to_string()
+                .contains("does not accept arguments")
+        );
+    }
 }

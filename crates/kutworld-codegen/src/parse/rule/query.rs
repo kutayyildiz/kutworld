@@ -2,7 +2,7 @@ use syn::parse::Parser;
 use syn::punctuated::Punctuated;
 use syn::{Attribute, Meta, Result, Token};
 
-use crate::model::{Rule, World};
+use crate::model::{Rule, World, selector_components};
 
 pub(super) fn parse(attr: &Attribute) -> Result<(Vec<syn::Ident>, Vec<syn::Ident>)> {
     let Meta::List(list) = &attr.meta else {
@@ -148,7 +148,7 @@ pub(super) fn validate(world: &World, rule: &Rule) -> Result<()> {
         }
     }
 
-    for view in rule.reads.iter().chain(&rule.writes) {
+    for view in rule.accesses.iter().map(|access| &access.component) {
         if !is_component(world, view) {
             return Err(syn::Error::new_spanned(
                 view,
@@ -176,15 +176,8 @@ pub(super) fn is_component(world: &World, name: &syn::Ident) -> bool {
 }
 
 fn selector_requirements(world: &World, selector: &syn::Ident) -> Result<Vec<syn::Ident>> {
-    if is_component(world, selector) {
-        return Ok(vec![selector.clone()]);
-    }
-    if let Some(indexed_query) = world
-        .indexed_queries
-        .iter()
-        .find(|indexed_query| indexed_query.name == *selector)
-    {
-        return Ok(indexed_query.components.clone());
+    if let Some(components) = selector_components(world, selector) {
+        return Ok(components);
     }
     Err(syn::Error::new_spanned(
         selector,

@@ -1,7 +1,6 @@
 use proc_macro2::TokenStream;
 use syn::{ItemMod, Result};
 
-use crate::generate;
 use crate::model::World;
 
 mod component;
@@ -9,7 +8,7 @@ mod indexed_query;
 mod initial_entity;
 mod rule;
 
-pub(crate) fn parse_world(args: TokenStream, input: TokenStream) -> Result<ItemMod> {
+pub(crate) fn parse_world(args: TokenStream, input: TokenStream) -> Result<(ItemMod, World)> {
     if !args.is_empty() {
         return Err(syn::Error::new_spanned(
             args,
@@ -18,8 +17,7 @@ pub(crate) fn parse_world(args: TokenStream, input: TokenStream) -> Result<ItemM
     }
     let mut module = syn::parse2::<ItemMod>(input)?;
     let world = collect_world(&mut module)?;
-    generate::append_world(&mut module, &world)?;
-    Ok(module)
+    Ok((module, world))
 }
 
 fn collect_world(module: &mut ItemMod) -> Result<World> {

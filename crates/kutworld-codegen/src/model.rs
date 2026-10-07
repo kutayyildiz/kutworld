@@ -25,16 +25,41 @@ pub(crate) struct Rule {
     pub(crate) name: Ident,
     pub(crate) has: Vec<Ident>,
     pub(crate) not: Vec<Ident>,
-    pub(crate) reads: Vec<Ident>,
-    pub(crate) writes: Vec<Ident>,
+    pub(crate) accesses: Vec<RuleAccess>,
     pub(crate) adds: Vec<Ident>,
     pub(crate) removes: Vec<Ident>,
-    pub(crate) depends: Vec<Ident>,
-    // Consumed by structural execution and scheduling when those stages are implemented.
-    #[allow(dead_code)]
+    pub(crate) break_cycle: Vec<Ident>,
     pub(crate) spawns: bool,
-    #[allow(dead_code)]
     pub(crate) despawns: bool,
     #[allow(dead_code)]
     pub(crate) serial: bool,
+}
+
+pub(crate) fn selector_components(world: &World, selector: &Ident) -> Option<Vec<Ident>> {
+    if world
+        .components
+        .iter()
+        .any(|component| component.name == *selector)
+    {
+        Some(vec![selector.clone()])
+    } else {
+        world
+            .indexed_queries
+            .iter()
+            .find(|query| query.name == *selector)
+            .map(|query| query.components.clone())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AccessKind {
+    Read,
+    ReadWrite,
+    Write,
+}
+
+#[derive(Debug)]
+pub(crate) struct RuleAccess {
+    pub(crate) component: Ident,
+    pub(crate) kind: AccessKind,
 }

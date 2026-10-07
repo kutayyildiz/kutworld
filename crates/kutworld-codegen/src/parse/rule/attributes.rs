@@ -74,7 +74,14 @@ pub(super) fn parse_flag_attribute(attrs: &[Attribute], name: &str) -> Result<bo
 
 pub(super) fn remove_rule_attributes(attrs: &mut Vec<Attribute>) {
     const NAMES: &[&str] = &[
-        "rule", "query", "adds", "removes", "spawns", "despawns", "depends", "serial",
+        "rule",
+        "query",
+        "adds",
+        "removes",
+        "spawns",
+        "despawns",
+        "break_cycle",
+        "serial",
     ];
     attrs.retain(|attr| !NAMES.iter().any(|name| is_marker(attr, name)));
 }

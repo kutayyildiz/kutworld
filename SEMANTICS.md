@@ -59,8 +59,9 @@ target. Rust checks type validity and visibility.
 Each declared indexed query receives a world-local entity index. During `World::new()`, Rust-authored
 initial entities populate indexes through the same generated private `AddComponent<T>` implementations
 used elsewhere.
-Rust rule metadata collection and validation are implemented. Rule execution, conflict analysis, and
-scheduling are not; TOML initial-entity input remains unimplemented.
+Rust rule metadata collection, inferred dependency scheduling, cycle resolution, and stable
+topological ordering are implemented. Rule execution and parallel conflict analysis are not;
+TOML initial-entity input remains unimplemented.
 
 ## Components
 
@@ -425,10 +426,11 @@ A rule conceptually contains:
 
 ```text
 query
-view
+typed access intent (Read, ReadWrite, Write)
 guard
-dependencies
 structural capabilities
+inferred dependencies with reasons
+targeted cycle-break permissions
 execution constraints
 implementation
 invocation mode
@@ -506,9 +508,14 @@ fn move_entity(
 means:
 
 ```text
-Position -> write
-Velocity -> read
+Position -> ReadWrite
+Velocity -> Read
 ```
+
+`&mut T` permits reading and writing the previous value. Use `#[write_only] &mut T` to declare a
+Write contract: the rule produces or replaces the component without depending on its prior value.
+`#[write_only]` is valid only on an `&mut Component` rule parameter, and codegen does not inspect
+the function body to prove the contract.
 
 Every component argument must be guaranteed present by the rule's query.
 
@@ -748,26 +755,20 @@ The compiler uses structural capabilities during scheduling.
 
 ## Rule Dependencies
 
-Rules may define explicit execution order.
+The compiler infers rule ordering from component accesses and structural effects. A strict access
+transition on the same component creates `Write -> ReadWrite`, `Write -> Read`, or `ReadWrite -> Read`.
+Equal access classes and unrelated components remain unordered. Source order only breaks ties in the
+stable final topological order. `#[serial]` does not create an edge.
 
-```rust
-#[rule]
-fn physics(...) {
-    ...
-}
+Targeted `#[break_cycle(physics)]` on `collisions` authorizes removal of an inferred `physics -> collisions`
+edge if resolution needs it. It does not create the dependency. `#[depends(...)]` is rejected.
 
-#[rule]
-#[depends(physics)]
-fn collisions(...) {
-    ...
-}
-```
-
-This means:
-
-```text
-physics must complete before collisions starts
-```
+`#[break_cycle(foo, bar)]` must contain a nonempty list of distinct rule names. On a rule `target`,
+each name authorizes removal of exactly the inferred incoming edge `name -> target`. Authorization
+does not remove the edge unless a resolver selects it to resolve a cycle. Unknown names, self edges,
+and references to edges that were not inferred are errors. Markers that the selected resolution does
+not consume are errors, as are consumed edges that can be restored while keeping the final graph
+acyclic.
 
 Dependencies express ordering only.
 
@@ -784,13 +785,14 @@ They do not imply:
 
 Multiple dependencies are allowed.
 
-Dependency cycles are compile-time errors.
+Cycles without sufficient targeted `#[break_cycle(...)]` authorizations are compile-time errors.
 
 If a dependency's guard prevents it from running, dependent rules may still run.
 
 ## Conflicting Rules
 
-The compiler does not invent an execution order for conflicting rules.
+Access conflicts do not automatically create ordering. Equal access classes remain unordered; future
+parallel conflict analysis may exclude conflicting rules from the same stage.
 
 For example:
 
@@ -799,24 +801,13 @@ A: write Health
 B: write Health
 ```
 
-without a dependency is invalid.
-
-The user must define the intended relationship:
-
-```rust
-#[depends(A)]
-fn B(...) {
-    ...
-}
-```
-
-The same applies to structural conflicts.
-
-This makes observable ordering explicit.
+such rules receive no inferred edge solely from being equal-class writers. Strict access transitions
+and structural membership interactions infer ordering automatically. A targeted cycle break may
+authorize removing an inferred edge when a cycle requires it.
 
 ## Parallel Execution
 
-Parallelization is implicit.
+When rule execution is implemented, parallelization is intended to be implicit.
 
 Rules may execute in parallel when they:
 
@@ -851,15 +842,45 @@ Structural mutation does not automatically require `#[serial]`.
 However, a structurally mutating rule may not execute in parallel with any rule whose query or
 access can be invalidated by that mutation.
 
-If such rules have no dependency defining their order, compilation fails.
+Structural effects infer ordering before accesses or queries whose component membership they can
+change. `#[serial]` remains execution metadata and does not resolve cycles or establish semantic
+order. The compiler preserves typed provenance for every inferred edge.
 
-Conflicting rules require an explicit dependency with `#[depends(...)]` whenever their effects
-have observable ordering. `#[serial]` only gives a rule an exclusive execution stage; it does not
-resolve conflicts or establish semantic order. The compiler must not invent ordering.
+Each component structural dependency reason retains its effect, mutated component, and receiving observation. Entity structural reasons retain the Spawn or Despawn effect and conservatively describe its possible effect on target query membership.
+For example, adding or removing `C` can separately interact with a direct `C` access and each query
+selector whose membership depends on `C`. Negative indexed selectors retain their original selector
+name and `not(...)` polarity in the reason.
+
+The current structural interaction matrix is:
+
+| Effect in rule A | Observation in rule B | Inferred edge |
+| --- | --- | --- |
+| Add or remove component `C` | Direct access to `C` | A → B |
+| Add or remove component `C` | Positive or negative query membership involving `C` | A → B |
+| Add or remove component `C` | Indexed-query membership requiring `C` | A → B |
+| Spawn or despawn | Entity-query membership | A → B |
+
+Indexed-query membership expands to its required components for both positive and negative
+selectors while retaining the whole selector in provenance. Spawn/despawn is conservative because
+the current metadata only records boolean effects and either may change membership for any entity
+query. Each effect is retained separately when both are declared.
+Structural effects alone do not order two rules; an individual effect must overlap an access or
+query observation. Structural component reasons have stronger break priority than data reasons;
+structural entity reasons are stronger than component reasons.
+
+V1 compares reasons from weakest to strongest as `ReadWrite -> Read`, `Write -> ReadWrite`,
+`Write -> Read`, structural component ordering, then structural entity ordering. Add and remove
+reasons share a strength, as do spawn and despawn reasons. For one edge with several reasons, v1
+uses the strongest reason. SCC impact is compared before reason strength.
+
+Cycle breaks authorize removal of one direct inferred incoming edge. They do not remove a transitive
+path between the same rules. Such a path remains active, and common validation rejects a selected
+break that is redundant when restored against the final graph.
 
 ## Stages
 
-The compiler derives execution stages at compile time.
+Future execution support may derive stages at compile time. The current codegen computes and
+documents rule order but does not invoke rules or create parallel stages.
 
 A parallel stage executes conceptually as:
 
@@ -1140,21 +1161,22 @@ TOML is intended for simple local dataflow and conditions.
 Rust rules provide the general-purpose implementation path.
 
 The current frontend collects `#[rule]`, one `#[query(has(...), not(...))]`, `#[adds(...)]`,
-`#[removes(...)]`, `#[spawns]`, `#[despawns]`, `#[depends(...)]`, and `#[serial]`. Rule functions
+`#[removes(...)]`, `#[spawns]`, `#[despawns]`, `#[break_cycle(...)]`, `#[serial]`, and parameter-level
+`#[write_only]`. Rule functions
 must be safe, synchronous, and nongeneric. Their parameters must be references to bare local
 component types (`&Component` or `&mut Component`), with at most one view per component. `has` must
 provide a positive driver; selectors resolve only to local components or indexed queries. Views must
-be guaranteed by the positive query. Selector redundancy and contradiction, unknown names, repeated
-metadata, and dependency cycles are rejected. Function signatures and bodies remain Rust and are
-type-checked by `rustc`. This metadata-only slice does not execute rules, derive conflicts, or schedule
-them. Guard and entity-restricted query metadata are not part of the supported subset; unrecognized
+be guaranteed by the positive query. Selector redundancy and contradiction, unknown names, repeated metadata, invalid write-only
+annotations, unresolved cycles, unused breaks, and redundant breaks are rejected. `&T`, `&mut T`, and
+`#[write_only] &mut T` mean Read, ReadWrite, and Write for scheduling. Function signatures and bodies
+remain Rust and are type-checked by `rustc`. The compiler infers dependencies and emits schedule
+rustdoc, but does not execute rules or derive parallel stages. Guard and entity-restricted query metadata are not part of the supported subset; unrecognized
 helper attributes remain for Rust to reject.
 
 ```rust
 #[rule]
 #[query(has(Player, Health), not(Dead))]
 #[adds(Regenerating)]
-#[depends(input)]
 fn regenerate(health: &mut Health) {
     // arbitrary Rust logic
 }
@@ -1183,9 +1205,11 @@ TOML and Rust rules lower into a shared representation containing at least:
 
 ```text
 query
-view
+typed component access (Read, ReadWrite, Write)
 guard
-dependencies
+structural effects
+inferred dependency edges and reasons
+targeted cycle-break authorizations
 serial
 adds
 removes

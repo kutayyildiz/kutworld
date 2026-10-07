@@ -4,7 +4,7 @@ use quote::{format_ident, quote};
 
 use super::{component, indexed_query, initial_entity, mutation};
 
-pub(super) fn generate(world: &World) -> TokenStream {
+pub(super) fn generate(world: &World, schedule: &crate::schedule::Schedule) -> TokenStream {
     let allocator_field = format_ident!("__kutworld_allocator");
     let component_fields = component::fields(world);
     let component_initializers = component::initializers(world);
@@ -12,6 +12,7 @@ pub(super) fn generate(world: &World) -> TokenStream {
     let indexed_query_initializers = indexed_query::initializers(world);
     let initial_entity_initializers = initial_entity::initializers(world);
     let mutation = mutation::generate(world);
+    let schedule_docs = schedule.rustdoc(world);
     let world_value = quote! {
         Self {
             #allocator_field: ::kutworld::EntityAllocator::new(),
@@ -29,6 +30,7 @@ pub(super) fn generate(world: &World) -> TokenStream {
         }
     };
     quote! {
+        #[doc = #schedule_docs]
         pub struct World {
             #[allow(dead_code)]
             #allocator_field: ::kutworld::EntityAllocator,
